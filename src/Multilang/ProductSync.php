@@ -5,7 +5,7 @@
  * Direction: the saved product is the source (any language, last write wins); the CLI uses the default-language
  * product as the authority. Synced: prices, sale dates, stock fields, SKU, global (`pa_*`) attributes + missing custom
  * attribute keys, dimensions/weight, tax, shipping class (term mapped per language), sold-individually, virtual/downloadable,
- * image + gallery (attachments are shared, Polylang media translation is OFF), catalog visibility, featured flag.
+ * image + gallery (Polylang media translation is ON: the twin gets the translated attachment, created via Polylang when missing, never the UA attachment id), catalog visibility, featured flag.
  *
  * NEVER written: title, slug, description, excerpt, categories, tags, Rank Math fields, reviews. This class must not call
  * set_name / set_slug / set_description / set_short_description / set_category_ids / set_tag_ids / set_parent_id.
@@ -301,7 +301,7 @@ final class ProductSync {
 		$changed = [];
 
 		foreach ( $this->keys_for( $source ) as $key ) {
-			if ( ( $want[ $key ] ?? null ) === ( $have[ $key ] ?? null ) ) {
+			if ( ( $want[ $key ] ?? null ) === ( $have[ $key ] ?? null ) && ! $this->media_in_wrong_language( $twin, $key, $lang ) ) {
 				continue;
 			}
 			$changed[] = $key;
@@ -367,8 +367,10 @@ final class ProductSync {
 				$value = $value instanceof \WC_DateTime ? $value->getTimestamp() : null;
 			} elseif ( 'shipping_class_id' === $key ) {
 				$value = $this->neutral_term( (int) $value );
+			} elseif ( 'image_id' === $key ) {
+				$value = $this->neutral_media( (int) $value );
 			} elseif ( 'gallery_image_ids' === $key ) {
-				$value = array_map( 'intval', (array) $value );
+				$value = array_map( [ $this, 'neutral_media' ], array_map( 'intval', (array) $value ) );
 			} elseif ( 'stock_quantity' === $key || 'low_stock_amount' === $key ) {
 				$value = ( null === $value || '' === $value ) ? null : (float) $value;
 			}
@@ -411,7 +413,48 @@ final class ProductSync {
 			$local = $value > 0 ? $this->polylang->translate_term( $value, $lang ) : 0;
 			$value = $local > 0 ? $local : $value;
 		}
+		if ( 'image_id' === $key ) {
+			$value = $this->polylang->media_in_language( (int) $value, $lang );
+		} elseif ( 'gallery_image_ids' === $key ) {
+			$value = array_map(
+				fn( $id ): int => $this->polylang->media_in_language( (int) $id, $lang ),
+				(array) $value
+			);
+		}
 		$twin->{'set_' . $key}( $value );
+	}
+
+	/**
+	 * Does the twin point at an attachment of another language (e.g. the UA image assigned by mistake).
+	 *
+	 * @param \WC_Product $twin Twin.
+	 * @param string      $key  Field key.
+	 * @param string      $lang Twin language.
+	 */
+	private function media_in_wrong_language( \WC_Product $twin, string $key, string $lang ): bool {
+		if ( 'image_id' !== $key && 'gallery_image_ids' !== $key ) {
+			return false;
+		}
+		$ids = 'image_id' === $key ? [ (int) $twin->get_image_id( 'edit' ) ] : array_map( 'intval', (array) $twin->get_gallery_image_ids( 'edit' ) );
+		foreach ( $ids as $id ) {
+			if ( $id > 0 && $this->polylang->post_language( $id ) !== $lang ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Default-language id of an attachment (media is translated: each language keeps its own alt/title), same id when untranslated.
+	 *
+	 * @param int $attachment_id Attachment ID.
+	 */
+	private function neutral_media( int $attachment_id ): int {
+		if ( $attachment_id <= 0 ) {
+			return 0;
+		}
+		$default = $this->polylang->translate_post( $attachment_id, $this->polylang->default_language() );
+		return $default > 0 ? $default : $attachment_id;
 	}
 
 	/**

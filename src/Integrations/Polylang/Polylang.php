@@ -192,4 +192,29 @@ final class Polylang extends AbstractIntegration {
 		$lang = $pll->links_model->get_language_from_url( $url );
 		return is_string( $lang ) ? $lang : '';
 	}
+
+	/**
+	 * Attachment in a language: the existing media translation, else a new one made through Polylang
+	 * (copies file, metadata and alt text as-is). Returns the original id when Polylang cannot translate it.
+	 *
+	 * @param int    $attachment_id Attachment ID.
+	 * @param string $lang          Target language slug.
+	 */
+	public function media_in_language( int $attachment_id, string $lang ): int {
+		if ( $attachment_id <= 0 || ! $this->is_ready() || '' === $lang ) {
+			return $attachment_id;
+		}
+		$existing = $this->translate_post( $attachment_id, $lang );
+		if ( $existing > 0 ) {
+			return $existing;
+		}
+		$pll = PLL();
+		if ( is_object( $pll ) && isset( $pll->model->post ) && method_exists( $pll->model->post, 'create_media_translation' ) ) {
+			$created = (int) $pll->model->post->create_media_translation( $attachment_id, $lang );
+			if ( $created > 0 ) {
+				return $created;
+			}
+		}
+		return $attachment_id;
+	}
 }
