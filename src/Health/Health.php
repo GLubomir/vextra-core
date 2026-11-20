@@ -62,9 +62,26 @@ final class Health implements ModuleInterface {
 
 		\WP_CLI::log( 'vextra-core ' . $data['plugin_version'] . ' | PHP ' . $data['php'] . ' | WP ' . $data['wp'] . ' | WC ' . ( $data['wc'] ?? 'n/a' ) );
 		\WP_CLI::log( 'Modules:' );
-		\WP_CLI\Utils\format_items( 'table', $data['modules'], [ 'id', 'enabled' ] );
+		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['modules'] ), [ 'id', 'enabled' ] );
 		\WP_CLI::log( 'Integrations:' );
-		\WP_CLI\Utils\format_items( 'table', $data['integrations'], [ 'id', 'available', 'version', 'ready' ] );
+		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['integrations'] ), [ 'id', 'available', 'version', 'ready' ] );
+	}
+
+	/**
+	 * Table rendering: booleans as yes/no, null as empty.
+	 *
+	 * @param array<string,mixed> $row Row with real booleans.
+	 * @return array<string,mixed>
+	 */
+	public function yes_no( array $row ): array {
+		foreach ( $row as $k => $v ) {
+			if ( is_bool( $v ) ) {
+				$row[ $k ] = $v ? 'yes' : 'no';
+			} elseif ( null === $v ) {
+				$row[ $k ] = '';
+			}
+		}
+		return $row;
 	}
 
 	/**
@@ -78,7 +95,7 @@ final class Health implements ModuleInterface {
 		foreach ( $plugin->modules() as $module ) {
 			$modules[] = [
 				'id'      => $module->id(),
-				'enabled' => $module->is_enabled() ? 'yes' : 'no',
+				'enabled' => $module->is_enabled(),
 			];
 		}
 
@@ -86,9 +103,9 @@ final class Health implements ModuleInterface {
 		foreach ( $plugin->integrations() as $integration ) {
 			$integrations[] = [
 				'id'        => $integration->id(),
-				'available' => $integration->is_available() ? 'yes' : 'no',
+				'available' => $integration->is_available(),
 				'version'   => $integration->version() ?? '',
-				'ready'     => $integration instanceof Polylang ? ( $integration->is_ready() ? 'yes' : 'no' ) : '',
+				'ready'     => $integration instanceof Polylang ? $integration->is_ready() : null,
 			];
 		}
 
