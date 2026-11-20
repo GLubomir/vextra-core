@@ -32,4 +32,164 @@ final class Polylang extends AbstractIntegration {
 	public function is_ready(): bool {
 		return $this->is_available() && function_exists( 'pll_current_language' ) && function_exists( 'PLL' );
 	}
+
+	/**
+	 * Current front-end language slug, or '' when none is defined (WP-CLI, early hooks, Polylang absent).
+	 */
+	public function current_language(): string {
+		if ( ! $this->is_ready() ) {
+			return '';
+		}
+		$lang = pll_current_language();
+		return is_string( $lang ) ? $lang : '';
+	}
+
+	/**
+	 * Default language slug, '' when unknown.
+	 */
+	public function default_language(): string {
+		if ( ! $this->is_ready() || ! function_exists( 'pll_default_language' ) ) {
+			return '';
+		}
+		$lang = pll_default_language();
+		return is_string( $lang ) ? $lang : '';
+	}
+
+	/**
+	 * All language slugs.
+	 *
+	 * @return string[]
+	 */
+	public function languages(): array {
+		if ( ! $this->is_ready() || ! function_exists( 'pll_languages_list' ) ) {
+			return [];
+		}
+		return array_map( 'strval', (array) pll_languages_list() );
+	}
+
+	/**
+	 * Hreflang base code (language part of the locale, e.g. `ru`) by language slug.
+	 *
+	 * @return array<string,string>
+	 */
+	public function locale_codes(): array {
+		if ( ! $this->is_ready() || ! function_exists( 'pll_languages_list' ) ) {
+			return [];
+		}
+		$slugs   = (array) pll_languages_list( [ 'fields' => 'slug' ] );
+		$locales = (array) pll_languages_list( [ 'fields' => 'locale' ] );
+		$out     = [];
+		foreach ( array_values( $slugs ) as $i => $slug ) {
+			$parts = explode( '-', str_replace( '_', '-', (string) ( $locales[ $i ] ?? $slug ) ) );
+			$out[ (string) $slug ] = strtolower( (string) reset( $parts ) );
+		}
+		return $out;
+	}
+
+	/**
+	 * Language slug of a post, '' when none.
+	 *
+	 * @param int $post_id Post ID.
+	 */
+	public function post_language( int $post_id ): string {
+		if ( ! $this->is_ready() || ! function_exists( 'pll_get_post_language' ) ) {
+			return '';
+		}
+		$lang = pll_get_post_language( $post_id );
+		return is_string( $lang ) ? $lang : '';
+	}
+
+	/**
+	 * Translation group of a post: language slug => post ID (includes the post itself).
+	 *
+	 * @param int $post_id Post ID.
+	 * @return array<string,int>
+	 */
+	public function translations( int $post_id ): array {
+		if ( ! $this->is_ready() || ! function_exists( 'pll_get_post_translations' ) ) {
+			return [];
+		}
+		return array_map( 'intval', (array) pll_get_post_translations( $post_id ) );
+	}
+
+	/**
+	 * Translation of a post in a language (0 when none; the post itself for its own language).
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $lang    Language slug.
+	 */
+	public function translate_post( int $post_id, string $lang ): int {
+		if ( ! $this->is_ready() || '' === $lang || ! function_exists( 'pll_get_post' ) ) {
+			return 0;
+		}
+		return (int) pll_get_post( $post_id, $lang );
+	}
+
+	/**
+	 * Translation of a term in a language (0 when none).
+	 *
+	 * @param int    $term_id Term ID.
+	 * @param string $lang    Language slug.
+	 */
+	public function translate_term( int $term_id, string $lang ): int {
+		if ( ! $this->is_ready() || '' === $lang || ! function_exists( 'pll_get_term' ) ) {
+			return 0;
+		}
+		return (int) pll_get_term( $term_id, $lang );
+	}
+
+	/**
+	 * Set the language of a post.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $lang    Language slug.
+	 */
+	public function set_post_language( int $post_id, string $lang ): void {
+		if ( $this->is_ready() && function_exists( 'pll_set_post_language' ) ) {
+			pll_set_post_language( $post_id, $lang );
+		}
+	}
+
+	/**
+	 * Link posts as translations of each other.
+	 *
+	 * @param array<string,int> $group Language slug => post ID.
+	 */
+	public function save_post_translations( array $group ): void {
+		if ( $this->is_ready() && function_exists( 'pll_save_post_translations' ) ) {
+			pll_save_post_translations( $group );
+		}
+	}
+
+	/**
+	 * WordPress locale (e.g. `ru_RU`) of a language slug, '' when unknown.
+	 *
+	 * @param string $lang Language slug.
+	 */
+	public function locale_of( string $lang ): string {
+		if ( ! $this->is_ready() || '' === $lang || ! function_exists( 'pll_languages_list' ) ) {
+			return '';
+		}
+		$slugs   = array_values( (array) pll_languages_list( [ 'fields' => 'slug' ] ) );
+		$locales = array_values( (array) pll_languages_list( [ 'fields' => 'locale' ] ) );
+		$index   = array_search( $lang, $slugs, true );
+		return false === $index ? '' : (string) ( $locales[ $index ] ?? '' );
+	}
+
+	/**
+	 * Language slug a front-end URL belongs to ('' when it cannot be told, e.g. hidden default prefix).
+	 *
+	 * @param string $url Absolute URL.
+	 */
+	public function language_from_url( string $url ): string {
+		if ( ! $this->is_ready() || '' === $url || ! function_exists( 'PLL' ) ) {
+			return '';
+		}
+		$pll = PLL();
+		if ( ! is_object( $pll ) || ! isset( $pll->links_model ) || ! method_exists( $pll->links_model, 'get_language_from_url' ) ) {
+			return '';
+		}
+		$lang = $pll->links_model->get_language_from_url( $url );
+		return is_string( $lang ) ? $lang : '';
+	}
 }
