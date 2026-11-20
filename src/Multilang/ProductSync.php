@@ -37,7 +37,6 @@ final class ProductSync {
 		'date_on_sale_from',
 		'date_on_sale_to',
 		'manage_stock',
-		'stock_quantity',
 		'stock_status',
 		'backorders',
 		'low_stock_amount',
@@ -61,7 +60,7 @@ final class ProductSync {
 	/**
 	 * Skipped for variable parents (price/stock derive from variations).
 	 */
-	private const VARIABLE_SKIP = [ 'regular_price', 'sale_price', 'date_on_sale_from', 'date_on_sale_to', 'manage_stock', 'stock_quantity', 'stock_status', 'backorders', 'low_stock_amount' ];
+	private const VARIABLE_SKIP = [ 'regular_price', 'sale_price', 'date_on_sale_from', 'date_on_sale_to', 'manage_stock', 'stock_status', 'backorders', 'low_stock_amount' ];
 
 	/**
 	 * Set while twins are being written (shared with StockSync).
@@ -83,6 +82,13 @@ final class ProductSync {
 	 * @var Polylang
 	 */
 	private Polylang $polylang;
+
+	/**
+	 * Align the stock quantity in this run (forced alignment only).
+	 *
+	 * @var bool
+	 */
+	private bool $sync_quantity = false;
 
 	public function __construct( Polylang $polylang ) {
 		$this->polylang = $polylang;
@@ -211,7 +217,9 @@ final class ProductSync {
 	 * @return array<int,string[]> Twin ID => changed field keys (empty array when already aligned).
 	 */
 	public function sync_from( \WC_Product $source, bool $force, bool $dry ): array {
-		$group = $this->polylang->translations( $source->get_id() );
+		// Forced runs (CLI, fresh twin) also align the quantity once; normal saves never write it.
+		$this->sync_quantity = $force;
+		$group               = $this->polylang->translations( $source->get_id() );
 		unset( $group[ $this->polylang->post_language( $source->get_id() ) ] );
 		$twin_ids = array_values( array_diff( $group, [ $source->get_id() ] ) );
 		if ( array() === $twin_ids ) {
@@ -310,6 +318,13 @@ final class ProductSync {
 			}
 		}
 
+		if ( $this->sync_quantity && $source->get_manage_stock( 'edit' ) && $twin->get_manage_stock( 'edit' ) && $source->get_stock_quantity( 'edit' ) !== $twin->get_stock_quantity( 'edit' ) ) {
+			$changed[] = 'stock_quantity';
+			if ( ! $dry ) {
+				$twin->set_stock_quantity( $source->get_stock_quantity( 'edit' ) );
+			}
+		}
+
 		$attributes = $this->merge_attributes( $source, $twin );
 		if ( null !== $attributes ) {
 			$changed[] = 'attributes';
@@ -350,7 +365,12 @@ final class ProductSync {
 	 * @return string[]
 	 */
 	private function keys_for( \WC_Product $product ): array {
-		return $product->is_type( 'variable' ) ? array_values( array_diff( self::FIELDS, self::VARIABLE_SKIP ) ) : self::FIELDS;
+		$keys = $product->is_type( 'variable' ) ? array_values( array_diff( self::FIELDS, self::VARIABLE_SKIP ) ) : self::FIELDS;
+		// Quantity is never a synced field (StockSync moves it as an atomic delta). With managed stock the status derives from it.
+		if ( $product->get_manage_stock( 'edit' ) ) {
+			$keys = array_values( array_diff( $keys, [ 'stock_status' ] ) );
+		}
+		return $keys;
 	}
 
 	/**
@@ -371,7 +391,7 @@ final class ProductSync {
 				$value = $this->neutral_media( (int) $value );
 			} elseif ( 'gallery_image_ids' === $key ) {
 				$value = array_map( [ $this, 'neutral_media' ], array_map( 'intval', (array) $value ) );
-			} elseif ( 'stock_quantity' === $key || 'low_stock_amount' === $key ) {
+			} elseif ( 'low_stock_amount' === $key ) {
 				$value = ( null === $value || '' === $value ) ? null : (float) $value;
 			}
 			$out[ $key ] = $value;
