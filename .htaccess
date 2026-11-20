@@ -1,0 +1,16 @@
+# vextra-core: only static assets are web-accessible (ADR-008). PHP is loaded from disk, never over HTTP.
+# Apache only; mirror on nginx (docs/security/server-hardening.md).
+
+Options -Indexes
+
+<IfModule mod_authz_core.c>
+	Require all denied
+	<FilesMatch "\.(css|js|svg|png|jpe?g|webp|avif|gif|ico|woff2?)$">
+		Require all granted
+	</FilesMatch>
+</IfModule>
+
+<IfModule mod_rewrite.c>
+	RewriteEngine On
+	RewriteRule ^(src|vendor|languages|tests|bin|docs|scripts|node_modules|\.git)(/|$) - [F,L]
+</IfModule>

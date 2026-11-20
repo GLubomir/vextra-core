@@ -8,3 +8,12 @@
 *.ico binary
 *.woff binary
 *.woff2 binary
+
+# Dev-only files are not shipped in `git archive` / release zips.
+/tests export-ignore
+/scripts/dev export-ignore
+/docs export-ignore
+/.github export-ignore
+/phpcs.xml.dist export-ignore
+/.gitignore export-ignore
+/.gitattributes export-ignore
