@@ -80,7 +80,7 @@ final class Polylang extends AbstractIntegration {
 		$locales = (array) pll_languages_list( [ 'fields' => 'locale' ] );
 		$out     = [];
 		foreach ( array_values( $slugs ) as $i => $slug ) {
-			$parts = explode( '-', str_replace( '_', '-', (string) ( $locales[ $i ] ?? $slug ) ) );
+			$parts                 = explode( '-', str_replace( '_', '-', (string) ( $locales[ $i ] ?? $slug ) ) );
 			$out[ (string) $slug ] = strtolower( (string) reset( $parts ) );
 		}
 		return $out;

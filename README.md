@@ -35,3 +35,26 @@ Shared helpers: `Support\Cache` (versioned, language in key, off under WP-CLI un
 `Support\Log` (WooCommerce logger, source `vextra-<channel>`, secrets scrubbed).
 
 Deploy: `composer install --no-dev -o`. Deactivation never deletes data; `uninstall.php` removes only its own options.
+
+## Multilang module (Polylang free + WooCommerce)
+
+Replaces the paid "Polylang for WooCommerce" (ADR-002 s11). Enabled only when WooCommerce and Polylang are ready;
+flag filter `vextra/core/multilang/enabled`.
+
+- **Woo pages per language**: shop/cart/checkout/my-account (+ terms, refund page when configured) map to the translation
+  of the current language. RU twins keep the UA slug (`/ru/catalog/`, `/ru/cart/`...) through a narrow `wp_unique_post_slug`
+  filter plus a `request` filter (language-aware `pagename` -> `page_id`). **Do not rename the four base slugs**: UA and RU
+  slugs are shared by the filter, not linked. A rename = both pages plus a manual Rank Math redirect in both languages.
+  Cart/checkout/my-account (all languages) are `noindex` and excluded from the Rank Math sitemap.
+- **Synced between translation twins** (last save wins, default-language product is the authority for the CLI): prices,
+  sale dates, stock fields, SKU (same SKU allowed inside one translation group only), weight/dimensions, tax, shipping class,
+  sold-individually, virtual/downloadable, image + gallery, catalog visibility, featured, global (`pa_*`) attributes.
+  Custom attributes are copied only into a twin that has none. Stock changes (orders, cancel, refund) propagate to twins.
+- **Never synced**: title, slug, content, excerpt, categories/tags, Rank Math fields, reviews, variations (out of scope).
+- **Orders**: `_vx_order_lang` order meta; order-bound emails are sent in the customer's locale.
+- **hreflang**: `uk`, `ru-UA`, `x-default` = UA on translated, indexable, non-paged pages.
+
+```
+wp vextra multilang pages [--dry-run]                          # create missing RU Woo pages (idempotent)
+wp vextra multilang sync-products [--ids=<ids>] [--dry-run]    # align twins from the UA products (batches of 50)
+```

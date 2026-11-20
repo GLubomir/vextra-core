@@ -21,6 +21,11 @@ use Vextra\Core\Support\Log;
 
 final class StockSync {
 
+	/**
+	 * Polylang adapter.
+	 *
+	 * @var Polylang
+	 */
 	private Polylang $polylang;
 
 	public function __construct( Polylang $polylang ) {

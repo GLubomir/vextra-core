@@ -77,6 +77,11 @@ final class ProductSync {
 	 */
 	private static bool $warned = false;
 
+	/**
+	 * Polylang adapter.
+	 *
+	 * @var Polylang
+	 */
 	private Polylang $polylang;
 
 	public function __construct( Polylang $polylang ) {
@@ -118,7 +123,7 @@ final class ProductSync {
 	/**
 	 * Product saved (CRUD hook).
 	 *
-	 * @param int            $product_id Product ID.
+	 * @param int              $product_id Product ID.
 	 * @param \WC_Product|null $product  Product object.
 	 */
 	public function on_save( $product_id, $product = null ): void {
@@ -140,9 +145,9 @@ final class ProductSync {
 	 * A translation was saved by Polylang. A brand-new twin (no hash yet) is aligned FROM the default-language product,
 	 * so empty fields of a fresh twin never overwrite the authority.
 	 *
-	 * @param int                $post_id      Post ID.
-	 * @param \WP_Post|null      $post         Post.
-	 * @param array<string,int>  $translations Translation group.
+	 * @param int               $post_id      Post ID.
+	 * @param \WP_Post|null     $post         Post.
+	 * @param array<string,int> $translations Translation group.
 	 */
 	public function on_translation_saved( $post_id, $post = null, $translations = [] ): void {
 		$post_id = (int) $post_id;
@@ -180,6 +185,7 @@ final class ProductSync {
 		}
 
 		global $wpdb;
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- read-only lookup, request-scoped and rare.
 		$holders = $wpdb->get_col(
 			$wpdb->prepare(
 				"SELECT posts.ID FROM {$wpdb->posts} AS posts INNER JOIN {$wpdb->wc_product_meta_lookup} AS lookup ON posts.ID = lookup.product_id WHERE posts.post_type IN ( 'product', 'product_variation' ) AND posts.post_status != 'trash' AND lookup.sku = %s AND lookup.product_id <> %d LIMIT 50",
@@ -187,6 +193,7 @@ final class ProductSync {
 				(int) $product_id
 			)
 		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery
 		foreach ( (array) $holders as $holder ) {
 			if ( ! in_array( (int) $holder, $group, true ) ) {
 				return $sku_found; // Held by a product outside the group: still a duplicate.
@@ -266,7 +273,7 @@ final class ProductSync {
 			);
 			foreach ( $products as $product ) {
 				++$stats['checked'];
-				$report = $this->sync_from( $product, true, $dry );
+				$report          = $this->sync_from( $product, true, $dry );
 				$stats['twins'] += count( $report );
 				foreach ( $report as $keys ) {
 					if ( array() !== $keys ) {
@@ -423,6 +430,16 @@ final class ProductSync {
 			$mine[ (string) $key ] = $attribute;
 		}
 
+		// Custom attribute names are per language (`розмір` / `размер`): the structure is copied only into a twin that
+		// has no custom attributes yet, otherwise a duplicate in the wrong language would appear.
+		$twin_has_custom = false;
+		foreach ( $mine as $attribute ) {
+			if ( $attribute instanceof \WC_Product_Attribute && ! $attribute->is_taxonomy() ) {
+				$twin_has_custom = true;
+				break;
+			}
+		}
+
 		$seen = [];
 		foreach ( $source->get_attributes( 'edit' ) as $key => $attribute ) {
 			if ( ! $attribute instanceof \WC_Product_Attribute ) {
@@ -439,7 +456,7 @@ final class ProductSync {
 			} elseif ( isset( $mine[ $key ] ) ) {
 				$result[ $key ] = $mine[ $key ]; // Custom attribute the twin already has: values stay per language.
 				$seen[ $key ]   = true;
-			} else {
+			} elseif ( ! $twin_has_custom ) {
 				$seen[ $key ]   = true;
 				$result[ $key ] = clone $attribute;
 				$differs        = true;

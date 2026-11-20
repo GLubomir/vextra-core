@@ -47,6 +47,11 @@ final class OrderLanguage {
 		'woocommerce_new_customer_note_notification',
 	];
 
+	/**
+	 * Polylang adapter.
+	 *
+	 * @var Polylang
+	 */
 	private Polylang $polylang;
 
 	/**

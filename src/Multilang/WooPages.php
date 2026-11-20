@@ -40,8 +40,18 @@ final class WooPages {
 	 */
 	public const NOINDEX = [ 'cart', 'checkout', 'myaccount' ];
 
+	/**
+	 * Polylang adapter.
+	 *
+	 * @var Polylang
+	 */
 	private Polylang $polylang;
 
+	/**
+	 * Rank Math adapter.
+	 *
+	 * @var RankMath
+	 */
 	private RankMath $rank_math;
 
 	/**
@@ -146,6 +156,7 @@ final class WooPages {
 
 		// A page of the SAME language (or without language) holding the slug keeps the suffix.
 		global $wpdb;
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery -- read-only lookup, request-scoped and rare.
 		$rows = $wpdb->get_col(
 			$wpdb->prepare(
 				"SELECT ID FROM {$wpdb->posts} WHERE post_name = %s AND post_type = 'page' AND post_parent = %d AND ID <> %d AND post_status NOT IN ( 'trash', 'auto-draft', 'inherit' ) LIMIT 20",
@@ -154,6 +165,7 @@ final class WooPages {
 				$post_id
 			)
 		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery
 		foreach ( (array) $rows as $other ) {
 			$other_lang = $this->polylang->post_language( (int) $other );
 			if ( '' === $other_lang || $other_lang === $lang ) {

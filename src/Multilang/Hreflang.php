@@ -1,6 +1,6 @@
 <?php
 /**
- * hreflang set: `uk` (default language), `ru-UA` (other languages get `<code>-UA`) and `x-default` = the default-language URL.
+ * Hreflang set: `uk` (default language), `ru-UA` (other languages get `<code>-UA`) and `x-default` = the default-language URL.
  *
  * Polylang (verified 3.9.2: `src/frontend/frontend-filters-links.php`) prints the set from `wp_head` only on translated,
  * non-paged pages and passes it through filter `pll_rel_hreflang_attributes` (array code => URL). This class rewrites
@@ -25,8 +25,18 @@ final class Hreflang {
 	 */
 	private const REGION = 'UA';
 
+	/**
+	 * Polylang adapter.
+	 *
+	 * @var Polylang
+	 */
 	private Polylang $polylang;
 
+	/**
+	 * Rank Math adapter.
+	 *
+	 * @var RankMath
+	 */
 	private RankMath $rank_math;
 
 	public function __construct( Polylang $polylang, RankMath $rank_math ) {
@@ -55,14 +65,14 @@ final class Hreflang {
 			if ( ! is_string( $url ) || '' === $url || 'x-default' === $code ) {
 				continue;
 			}
-			$parts                                = explode( '-', (string) $code );
+			$parts = explode( '-', (string) $code );
 			$by_code[ strtolower( (string) reset( $parts ) ) ] = $url;
 		}
 
-		$default = $this->polylang->default_language();
-		$codes   = $this->polylang->locale_codes();
-		$allowed = $this->published_languages();
-		$out     = [];
+		$default     = $this->polylang->default_language();
+		$codes       = $this->polylang->locale_codes();
+		$allowed     = $this->published_languages();
+		$out         = [];
 		$default_url = '';
 
 		foreach ( $codes as $slug => $code ) {

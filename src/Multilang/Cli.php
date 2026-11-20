@@ -29,8 +29,18 @@ final class Cli {
 
 	private const TARGET_LANG = 'ru';
 
+	/**
+	 * Polylang adapter.
+	 *
+	 * @var Polylang
+	 */
 	private Polylang $polylang;
 
+	/**
+	 * Product sync service.
+	 *
+	 * @var ProductSync
+	 */
 	private ProductSync $sync;
 
 	public function __construct( Polylang $polylang, ProductSync $sync ) {
@@ -157,16 +167,18 @@ final class Cli {
 		if ( ! empty( $assoc['ids'] ) ) {
 			$ids = array_values( array_filter( array_map( 'absint', explode( ',', (string) $assoc['ids'] ) ) ) );
 		} else {
-			$ids = [];
-			$page = 1;
-			do {
-				$batch = get_posts(
+			$ids      = [];
+			$page     = 1;
+			$per_page = 100;
+			$fetched  = $per_page;
+			while ( $fetched === $per_page ) {
+				$batch   = get_posts(
 					[
 						'post_type'        => 'product',
 						'post_status'      => [ 'publish', 'draft', 'pending', 'private' ],
 						'lang'             => $default,
 						'fields'           => 'ids',
-						'posts_per_page'   => 200,
+						'posts_per_page'   => $per_page,
 						'paged'            => $page,
 						'orderby'          => 'ID',
 						'order'            => 'ASC',
@@ -174,9 +186,10 @@ final class Cli {
 						'suppress_filters' => false,
 					]
 				);
-				$ids   = array_merge( $ids, $batch );
+				$ids     = array_merge( $ids, $batch );
+				$fetched = count( $batch );
 				++$page;
-			} while ( count( $batch ) === 200 );
+			}
 		}
 
 		$stats = $this->sync->sync_ids( $ids, $dry );
@@ -198,11 +211,11 @@ final class Cli {
 	 * @param string   $key     Woo page key.
 	 * @param string   $title   RU title.
 	 * @param \WP_Post $base    Default-language page.
-	 * @param string   $default Default language slug.
+	 * @param string   $default_lang Default language slug.
 	 * @param string   $target  Target language slug.
 	 * @return int New page ID or 0.
 	 */
-	private function create_translation( string $key, string $title, \WP_Post $base, string $default, string $target ): int {
+	private function create_translation( string $key, string $title, \WP_Post $base, string $default_lang, string $target ): int {
 		$content = $base->post_content;
 		if ( 'shop' === $key && '' !== trim( wp_strip_all_tags( do_blocks( $content ) ) ) ) {
 			\WP_CLI::warning( 'shop: the UA page has text content; the RU page was created with a placeholder (needs RU text).' );
@@ -228,13 +241,13 @@ final class Cli {
 		$new_id = (int) $new_id;
 
 		if ( '' === $this->polylang->post_language( $base->ID ) ) {
-			$this->polylang->set_post_language( $base->ID, $default );
+			$this->polylang->set_post_language( $base->ID, $default_lang );
 		}
 		$this->polylang->set_post_language( $new_id, $target );
 
-		$group            = $this->polylang->translations( $base->ID );
-		$group[ $default ] = $base->ID;
-		$group[ $target ]  = $new_id;
+		$group                  = $this->polylang->translations( $base->ID );
+		$group[ $default_lang ] = $base->ID;
+		$group[ $target ]       = $new_id;
 		$this->polylang->save_post_translations( $group );
 
 		// Language is set now: the slug filter may grant the shared slug.
