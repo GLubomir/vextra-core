@@ -15,6 +15,7 @@ namespace Vextra\Core;
 use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Vextra\Core\Admin\Notices;
 use Vextra\Core\Compat\Compat;
+use Vextra\Core\Compat\Conflicts;
 use Vextra\Core\Contracts\ModuleInterface;
 use Vextra\Core\Dev\Dev;
 use Vextra\Core\Guard\Guard;
@@ -79,6 +80,20 @@ final class Plugin {
 	 */
 	private array $modules = [];
 
+	/**
+	 * Conflict rules (created before the module loop so the yield filter exists when modules are evaluated).
+	 *
+	 * @var Conflicts|null
+	 */
+	private ?Conflicts $conflicts = null;
+
+	/**
+	 * Module ids that yielded to a conflicting plugin in this request.
+	 *
+	 * @var string[]
+	 */
+	private array $yielded = [];
+
 	private function __construct( bool $autoload_missing ) {
 		$this->autoload_missing = $autoload_missing;
 	}
@@ -139,6 +154,26 @@ final class Plugin {
 		return $this->modules;
 	}
 
+	/**
+	 * Conflict registry (always available after `plugins_loaded` priority 20 started).
+	 */
+	public function conflicts(): Conflicts {
+		if ( null === $this->conflicts ) {
+			$this->conflicts = new Conflicts();
+			$this->conflicts->register();
+		}
+		return $this->conflicts;
+	}
+
+	/**
+	 * Module ids switched off by the `vextra/core/module_enabled` filter although their own check passed.
+	 *
+	 * @return string[]
+	 */
+	public function yielded(): array {
+		return $this->yielded;
+	}
+
 	public function load_textdomain(): void {
 		load_plugin_textdomain( 'vextra-core', false, dirname( plugin_basename( VEXTRA_CORE_FILE ) ) . '/languages' );
 	}
@@ -155,6 +190,7 @@ final class Plugin {
 	 */
 	public function register_modules(): void {
 		( new Notices( $this->autoload_missing, $this->integrations()['woocommerce'] ) )->register();
+		$this->conflicts();
 
 		/**
 		 * Filters the module class list.
@@ -169,9 +205,21 @@ final class Plugin {
 			}
 			$module                         = new $class();
 			$this->modules[ $module->id() ] = $module;
-			if ( $module->is_enabled() ) {
-				$module->register();
+			if ( ! $module->is_enabled() ) {
+				continue;
 			}
+
+			/**
+			 * Final say on a module that passed its own `is_enabled()` (conflict guard: yield to a duplicate plugin).
+			 *
+			 * @param bool   $enabled True.
+			 * @param string $id      Module id.
+			 */
+			if ( ! (bool) apply_filters( 'vextra/core/module_enabled', true, $module->id() ) ) {
+				$this->yielded[] = $module->id();
+				continue;
+			}
+			$module->register();
 		}
 	}
 }

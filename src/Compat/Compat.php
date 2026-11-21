@@ -1,6 +1,6 @@
 <?php
 /**
- * Compat module (TASK-033): update-safety tooling. CLI only (`wp vextra compat`, `wp vextra smoke`), no web entry point.
+ * Compat module (TASK-033, TASK-028b): update-safety tooling. CLI (`wp vextra compat`, `wp vextra smoke`) + admin conflict notices.
  *
  * Holds the required-API registry that mirrors `docs/compat/integrations.md` (theme repo). Filter `vextra/core/compat/registry`
  * lets tests append or change entries. Statuses: OK | MISSING (required, fails the run) | WARN (optional missing) |
@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Compat;
 
+use Vextra\Core\Admin\ConflictNotices;
 use Vextra\Core\Contracts\ModuleInterface;
 use Vextra\Core\Plugin;
 
@@ -36,9 +37,19 @@ final class Compat implements ModuleInterface {
 	}
 
 	public function register(): void {
+		if ( is_admin() ) {
+			( new ConflictNotices( $this->conflicts() ) )->register();
+		}
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			( new Cli( $this ) )->register();
 		}
+	}
+
+	/**
+	 * Conflict rule registry (owned by the kernel so the yield filter exists before the module loop).
+	 */
+	public function conflicts(): Conflicts {
+		return Plugin::instance()->conflicts();
 	}
 
 	/**
@@ -142,7 +153,7 @@ final class Compat implements ModuleInterface {
 			$e( 'rankmath', 'class', 'RankMath\\Term', false, 'core RankMath adapter', 'treated as single term' ),
 			$e( 'rankmath', 'class', 'RankMath\\Sitemap\\Cache', true, 'core RankMath adapter', 'stale sitemap until TTL' ),
 			$e( 'rankmath', 'method', 'invalidate_storage', true, 'core RankMath adapter', 'stale sitemap until TTL', 'RankMath\\Sitemap\\Cache' ),
-			$e( 'rankmath', 'method', 'get_settings', false, 'core RankMath adapter', 'assumed off', 'RankMath\\Helper' ),
+			$e( 'rankmath', 'method', 'get_settings', false, 'core RankMath adapter (setting(), conflict rules)', 'assumed off', 'RankMath\\Helper' ),
 			$e( 'rankmath', 'method', 'is_multiple_terms_query', false, 'core RankMath adapter', 'treated as single term', 'RankMath\\Term' ),
 			$e( 'rankmath', 'hook', 'rank_math/frontend/robots', true, 'core RankMath adapter', 'default robots' ),
 			$e( 'rankmath', 'hook', 'rank_math/frontend/title', true, 'core RankMath adapter, Seo Templates', 'default titles' ),

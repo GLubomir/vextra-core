@@ -48,3 +48,73 @@ msgstr "vextra-core требует PHP %s или новее."
 #, php-format
 msgid "vextra-core потребує WordPress %s або новішої версії."
 msgstr "vextra-core требует WordPress %s или новее."
+
+#: src/Guard/Responder.php
+msgid "Забагато запитів. Спробуйте за кілька секунд."
+msgstr "Слишком много запросов. Повторите через несколько секунд."
+
+#: src/Guard/Responder.php
+msgid "Забагато запитів"
+msgstr "Слишком много запросов"
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
+msgstr "В Rank Math включён «Auto Post Redirect», а редиректы слагов ведёт vextra-core"
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
+msgstr "Rank Math → Общие настройки → Редиректы → «Auto Post Redirect» выключить."
+
+#: src/Compat/Conflicts.php
+msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
+msgstr "Активен второй SEO-плагин: поддерживается только Rank Math"
+
+#: src/Compat/Conflicts.php
+msgid "Деактивуйте плагін, що дублює Rank Math (title, schema, sitemap, редиректи)."
+msgstr "Деактивируйте плагин, дублирующий Rank Math (title, schema, sitemap, редиректы)."
+
+#: src/Compat/Conflicts.php
+msgid "Активний інший мультимовний плагін: модуль multilang вимкнено"
+msgstr "Активен другой мультиязычный плагин: модуль multilang отключён"
+
+#: src/Compat/Conflicts.php
+msgid "Підтримуваний мультимовний плагін — Polylang. Деактивуйте конфліктний плагін, модуль увімкнеться сам."
+msgstr "Поддерживаемый мультиязычный плагин — Polylang. Деактивируйте конфликтующий плагин, модуль включится сам."
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін редиректів поруч із редиректами vextra-core"
+msgstr "Активен плагин редиректов рядом с редиректами vextra-core"
+
+#: src/Compat/Conflicts.php
+msgid "Редиректи слагів і термінів веде vextra-core (через Rank Math). Перевірте, що правила не дублюються."
+msgstr "Редиректы слагов и терминов ведёт vextra-core (через Rank Math). Проверьте, что правила не дублируются."
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін списку бажань (власна функція планується)"
+msgstr "Активен плагин списка желаний (собственная функция планируется)"
+
+#: src/Compat/Conflicts.php
+msgid "Інформаційно: після появи власного списку бажань плагін доведеться вимкнути."
+msgstr "Информационно: после появления собственного списка желаний плагин придётся отключить."
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін безпеки з лімітами запитів поруч із модулем guard"
+msgstr "Активен плагин безопасности с лимитами запросов рядом с модулем guard"
+
+#: src/Compat/Conflicts.php
+msgid "Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403."
+msgstr "Отключите в плагине безопасности лимиты запросов и правила robots.txt, чтобы не дублировать 429/403."
+
+#: src/Compat/Conflicts.php
+msgid "У Rank Math заповнено редактор robots.txt: він замінює базовий текст, у якому guard об’єднує свої правила"
+msgstr "В Rank Math заполнен редактор robots.txt: он заменяет базовый текст, в который guard объединяет свои правила"
+
+#: src/Compat/Conflicts.php
+msgid "Залиште в редакторі рядок «Sitemap:» або очистіть редактор (Rank Math → Загальні налаштування → Редактор robots.txt)."
+msgstr "Оставьте в редакторе строку «Sitemap:» или очистите редактор (Rank Math → Общие настройки → Редактор robots.txt)."
+
+#. translators: %s: module id
+#: src/Admin/ConflictNotices.php
+#, php-format
+msgid "Модуль «%s» вимкнено."
+msgstr "Модуль «%s» отключён."
