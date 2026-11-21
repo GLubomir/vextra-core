@@ -161,7 +161,7 @@ final class Cli {
 		foreach ( $conflicts as $row ) {
 			if ( $row['active'] && $row['blocking'] ) {
 				++$blocking;
-				$messages[] = sprintf( 'CONFLICT [%s] %s %s', $row['id'], $row['title'], $row['fix_hint'] );
+				$messages[] = sprintf( 'CONFLICT [%s] %s %s', $row['id'], Conflicts::sentence( (string) $row['title'] ), Conflicts::sentence( (string) $row['fix_hint'] ) );
 			}
 		}
 

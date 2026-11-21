@@ -234,6 +234,19 @@ final class Conflicts {
 	}
 
 	/**
+	 * Close a message with a full stop so message and hint read as separate sentences.
+	 *
+	 * @param string $text Message part.
+	 */
+	public static function sentence( string $text ): string {
+		$text = rtrim( trim( $text ), ' 	' );
+		if ( '' === $text ) {
+			return '';
+		}
+		return 1 === preg_match( '/[.!?…]$/u', $text ) ? $text : $text . '.';
+	}
+
+	/**
 	 * Active blocking conflicts.
 	 *
 	 * @return array<int,array<string,mixed>>

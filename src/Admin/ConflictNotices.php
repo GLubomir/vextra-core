@@ -38,16 +38,17 @@ final class ConflictNotices {
 			if ( empty( $row['active'] ) ) {
 				continue;
 			}
-			$parts = [ (string) $row['title'] ];
+			$title = (string) $row['title'];
 			if ( '' !== (string) $row['detail'] ) {
-				$parts[] = '(' . (string) $row['detail'] . ')';
+				$title .= ' (' . (string) $row['detail'] . ')';
 			}
+			$parts = [ Conflicts::sentence( $title ) ];
 			if ( ! empty( $row['yielded'] ) ) {
 				/* translators: %s: module id */
-				$parts[] = sprintf( __( 'Модуль «%s» вимкнено.', 'vextra-core' ), (string) $row['module'] );
+				$parts[] = Conflicts::sentence( sprintf( __( 'Модуль «%s» вимкнено.', 'vextra-core' ), (string) $row['module'] ) );
 			}
 			if ( '' !== (string) $row['fix_hint'] ) {
-				$parts[] = (string) $row['fix_hint'];
+				$parts[] = Conflicts::sentence( (string) $row['fix_hint'] );
 			}
 			printf(
 				'<div class="notice notice-%1$s"><p><strong>vextra-core:</strong> %2$s <code>%3$s</code></p></div>',
