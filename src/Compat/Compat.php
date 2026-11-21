@@ -68,6 +68,7 @@ final class Compat implements ModuleInterface {
 			$e( 'wordpress', 'function', 'rest_get_server', false, 'core Compat', 'route check unverifiable' ),
 			$e( 'wordpress', 'function', 'wp_prime_option_caches', false, 'theme ProductCardData', 'one query per option' ),
 			$e( 'wordpress', 'function', 'wp_using_ext_object_cache', true, 'theme ProductCardData, Support/Cache', 'none (core function)' ),
+			$e( 'wordpress', 'function', 'rest_convert_error_to_response', true, 'core Guard StoreApi', 'none (core function)' ),
 
 			// WooCommerce.
 			$e( 'woocommerce', 'class', 'WooCommerce', true, 'core WooCommerce adapter, theme Speculation', 'Woo modules disabled' ),
@@ -104,6 +105,15 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'hook', 'woocommerce_checkout_create_order', true, 'core Multilang OrderLanguage', 'order language missing' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_store_api_checkout_update_order_meta', true, 'core Multilang OrderLanguage', 'order language missing' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_enqueue_styles', false, 'theme Woo/Assets', 'Woo styles load next to ours' ),
+			$e( 'woocommerce', 'function', 'wc_get_orders', false, 'core Guard DraftOrders', 'draft-order purge skipped' ),
+			$e( 'woocommerce', 'function', 'as_schedule_recurring_action', false, 'core Guard DraftOrders (Action Scheduler bundled with Woo)', 'draft-order purge not scheduled' ),
+			$e( 'woocommerce', 'function', 'as_has_scheduled_action', false, 'core Guard DraftOrders', 'draft-order purge not scheduled' ),
+			$e( 'woocommerce', 'function', 'as_unschedule_all_actions', false, 'core Guard DraftOrders (deactivation)', 'schedule stays until Woo is removed' ),
+			$e( 'woocommerce', 'function', 'as_enqueue_async_action', false, 'core Guard DraftOrders', 'backlog drains one batch per day' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_store_api_rate_limit_options', true, 'core Guard StoreApi', 'Store API limiter off (wc-ajax, coupon, REST, search buckets keep working)' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_store_api_rate_limit_id', false, 'core Guard StoreApi', 'Woo keys anonymous clients by REMOTE_ADDR itself' ),
+			$e( 'woocommerce', 'rest', '/wc/store/v1/products', false, 'core Guard StoreApi (blocked for anonymous)', 'nothing to block' ),
+			$e( 'woocommerce', 'rest', '/wc/store/v1/cart/apply-coupon', false, 'core Guard StoreApi (coupon bucket)', 'coupon bucket unused for the Store API' ),
 
 			// Polylang.
 			$e( 'polylang', 'const', 'POLYLANG_VERSION', true, 'core Polylang adapter', 'adapter unavailable' ),
