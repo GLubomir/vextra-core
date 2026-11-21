@@ -21,6 +21,7 @@ use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
+use Vextra\Core\Seo\Seo;
 
 final class Plugin {
 
@@ -30,6 +31,7 @@ final class Plugin {
 	private const MODULES = [
 		Health::class,
 		Multilang::class,
+		Seo::class,
 	];
 
 	/**
