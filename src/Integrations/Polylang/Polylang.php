@@ -68,6 +68,30 @@ final class Polylang extends AbstractIntegration {
 	}
 
 	/**
+	 * Language slug from a value posted by Polylang admin forms: the slug itself or the numeric language term id
+	 * (the "add term" dropdown posts `term_id`). Public API only (`pll_languages_list` field maps); '' when unknown.
+	 *
+	 * @param string $value Slug or numeric id.
+	 */
+	public function slug_from_value( string $value ): string {
+		$value = trim( $value );
+		if ( '' === $value || ! $this->is_ready() || ! function_exists( 'pll_languages_list' ) ) {
+			return '';
+		}
+		$slugs = array_map( 'strval', (array) pll_languages_list( [ 'fields' => 'slug' ] ) );
+		if ( in_array( $value, $slugs, true ) ) {
+			return $value;
+		}
+		if ( ctype_digit( $value ) ) {
+			$ids = array_map( 'strval', array_values( (array) pll_languages_list( [ 'fields' => 'term_id' ] ) ) );
+			$pos = array_search( $value, $ids, true );
+			if ( false !== $pos && isset( $slugs[ $pos ] ) ) {
+				return $slugs[ $pos ];
+			}
+		}
+		return '';
+	}
+	/**
 	 * Hreflang base code (language part of the locale, e.g. `ru`) by language slug.
 	 *
 	 * @return array<string,string>

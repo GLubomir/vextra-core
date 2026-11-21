@@ -284,6 +284,11 @@ final class TermRedirects {
 	 * @param int[] $ids Ids.
 	 */
 	private function save_owned( array $ids ): void {
-		update_option( self::OPTION, array_values( array_unique( array_map( 'intval', $ids ) ) ), false );
+		$ids = array_values( array_unique( array_map( 'intval', $ids ) ) );
+		if ( [] === $ids ) {
+			delete_option( self::OPTION ); // No index row lingers once the last redirect is gone.
+			return;
+		}
+		update_option( self::OPTION, $ids, false );
 	}
 }

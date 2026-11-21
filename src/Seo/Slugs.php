@@ -228,7 +228,7 @@ final class Slugs {
 		$candidates = [
 			$explicit,
 			isset( $args['lang'] ) && is_string( $args['lang'] ) ? sanitize_key( $args['lang'] ) : '',
-			$this->request_language( 'term' === $kind ? 'term_lang_choice' : 'post_lang_choice' ),
+			'term' === $kind ? $this->request_language( [ 'term_lang_choice', 'inline_lang_choice' ] ) : $this->request_language( [ 'post_lang_choice' ] ),
 			$post_id > 0 ? $this->polylang->post_language( $post_id ) : '',
 		];
 		foreach ( $candidates as $candidate ) {
@@ -246,13 +246,20 @@ final class Slugs {
 	}
 
 	/**
-	 * Language chosen in the Polylang admin form (value only selects a transliteration table; no write depends on it).
+	 * Language chosen in the Polylang admin form (first non-empty field). Polylang posts the language slug or its numeric term id;
+	 * the adapter resolves both against the configured languages. The value only selects a transliteration table.
 	 *
-	 * @param string $field Request field.
+	 * @param string[] $fields Request fields in priority order.
 	 */
-	private function request_language( string $field ): string {
-		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- read-only table choice, validated against the configured languages.
-		$value = isset( $_POST[ $field ] ) && is_string( $_POST[ $field ] ) ? sanitize_key( wp_unslash( $_POST[ $field ] ) ) : '';
-		return $value;
+	private function request_language( array $fields ): string {
+		foreach ( $fields as $field ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing -- read-only table choice, validated against the configured languages.
+			$value = isset( $_POST[ $field ] ) && is_string( $_POST[ $field ] ) ? sanitize_key( wp_unslash( $_POST[ $field ] ) ) : '';
+			$slug  = $this->polylang->slug_from_value( $value );
+			if ( '' !== $slug ) {
+				return $slug;
+			}
+		}
+		return '';
 	}
 }
