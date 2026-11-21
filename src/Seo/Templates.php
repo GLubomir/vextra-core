@@ -4,7 +4,7 @@
  * description filters. Stored Rank Math settings are never rewritten: they hold the Ukrainian values, this class overrides
  * them in code by the Polylang language of the request. A manually written title/description (post or term SEO meta) always wins.
  *
- * Covered: product title, category title + fallback description, front-page title + description, shop description, and the
+ * Covered: product title + description (price), category title (short form for long names), shop title + fallback description, front-page title + description, shop description, and the
  * `Сторінка N` / `Страница N` suffix on page 2+ of the shop and category archives (title always, description while <= 160 chars).
  * All strings live in `Templates::STRINGS`, adjustable with filter `vextra/seo/templates` (language slug => key => string).
  *
@@ -25,28 +25,39 @@ final class Templates {
 	 */
 	public const STRINGS = [
 		'uk' => [
-			'product_title'    => '%title% — купити в Україні | %sitename%',
-			'term_title'       => '%term% — купити в Україні | %sitename%',
-			'term_description' => '%term% — великий вибір в інтернет-магазині Vextra. Каталог, фото та ціни.',
-			'home_title'       => 'Інтернет-магазин електроніки та техніки в Україні | %sitename%',
-			'home_description' => 'Vextra — інтернет-магазин електроніки, побутової техніки та товарів для дому в Україні. Каталог з вибором за категоріями.',
-			'shop_description' => 'Каталог Vextra: електроніка, побутова техніка, дім і сад, дитячі товари, краса і здоров\'я та інші категорії. Оберіть потрібний розділ.',
-			'page'             => 'Сторінка %d',
-			'home_label'       => 'Головна',
+			'product_title'       => '%title% | %sitename%',
+			'product_description' => 'Купити %title% за %price% ₴ у Vextra — доставка по Україні.',
+			'term_title'          => '%term% — купити в Україні | %sitename%',
+			'term_title_long'     => '%term% | %sitename%',
+			'shop_title'          => 'Каталог товарів — електроніка, техніка, дім | %sitename%',
+			'term_description'    => '%term% — великий вибір в інтернет-магазині Vextra. Каталог, фото та ціни.',
+			'home_title'          => 'Інтернет-магазин електроніки та техніки в Україні | %sitename%',
+			'home_description'    => 'Vextra — інтернет-магазин електроніки, побутової техніки та товарів для дому в Україні. Каталог з вибором за категоріями.',
+			'shop_description'    => 'Каталог Vextra: електроніка, побутова техніка, дім і сад, дитячі товари, краса і здоров\'я та інші категорії. Оберіть потрібний розділ.',
+			'page'                => 'Сторінка %d',
+			'home_label'          => 'Головна',
 		],
 		'ru' => [
-			'product_title'    => '%title% — купить в Украине | %sitename%',
-			'term_title'       => '%term% — купить в Украине | %sitename%',
-			'term_description' => '%term% — большой выбор в интернет-магазине Vextra. Каталог, фото и цены.',
-			'home_title'       => 'Интернет-магазин электроники и техники в Украине | %sitename%',
-			'home_description' => 'Vextra — интернет-магазин электроники, бытовой техники и товаров для дома в Украине. Каталог с выбором по категориям.',
-			'shop_description' => 'Каталог Vextra: электроника, бытовая техника, дом и сад, детские товары, красота и здоровье и другие категории. Выберите нужный раздел.',
-			'page'             => 'Страница %d',
-			'home_label'       => 'Главная',
+			'product_title'       => '%title% | %sitename%',
+			'product_description' => 'Купить %title% за %price% ₴ в Vextra — доставка по Украине.',
+			'term_title'          => '%term% — купить в Украине | %sitename%',
+			'term_title_long'     => '%term% | %sitename%',
+			'shop_title'          => 'Каталог товаров — электроника, техника, дом | %sitename%',
+			'term_description'    => '%term% — большой выбор в интернет-магазине Vextra. Каталог, фото и цены.',
+			'home_title'          => 'Интернет-магазин электроники и техники в Украине | %sitename%',
+			'home_description'    => 'Vextra — интернет-магазин электроники, бытовой техники и товаров для дома в Украине. Каталог с выбором по категориям.',
+			'shop_description'    => 'Каталог Vextra: электроника, бытовая техника, дом и сад, детские товары, красота и здоровье и другие категории. Выберите нужный раздел.',
+			'page'                => 'Страница %d',
+			'home_label'          => 'Главная',
 		],
 	];
 
 	private const DESCRIPTION_MAX = 160;
+
+	/**
+	 * Category names longer than this use the short `%term% | Site` title (the suffix would be cut in the SERP).
+	 */
+	private const TERM_NAME_LONG = 28;
 
 	/**
 	 * Polylang adapter.
@@ -115,7 +126,8 @@ final class Templates {
 				return $title;
 			}
 			if ( ! $this->rank_math->term_has_manual( $term->term_id, 'title' ) ) {
-				$title = $this->fill( $t['term_title'], [ '%term%' => wp_strip_all_tags( $term->name ) ], $site );
+				$name  = wp_strip_all_tags( $term->name );
+				$title = $this->fill( $t[ mb_strlen( $name ) > self::TERM_NAME_LONG ? 'term_title_long' : 'term_title' ], [ '%term%' => $name ], $site );
 			}
 			return $this->with_page_title( $title, $t, $site );
 		}
@@ -125,6 +137,9 @@ final class Templates {
 		}
 
 		if ( $this->is_shop() ) {
+			if ( ! $this->rank_math->post_has_manual( $this->shop_page_id(), 'title' ) ) {
+				$title = $this->fill( $t['shop_title'], [], $site );
+			}
 			return $this->with_page_title( $title, $t, $site );
 		}
 
@@ -142,6 +157,22 @@ final class Templates {
 			return $description;
 		}
 		$t = $this->strings();
+
+		if ( is_singular( 'product' ) ) {
+			$id    = (int) get_queried_object_id();
+			$price = $this->price( $id );
+			if ( '' === $price || $this->rank_math->post_has_manual( $id, 'description' ) ) {
+				return $description;
+			}
+			return $this->fill(
+				$t['product_description'],
+				[
+					'%title%' => wp_strip_all_tags( (string) get_post_field( 'post_title', $id, 'raw' ) ),
+					'%price%' => $price,
+				],
+				''
+			);
+		}
 
 		if ( is_tax( TermCounts::TAXONOMY ) ) {
 			$term = get_queried_object();
@@ -163,6 +194,24 @@ final class Templates {
 		}
 
 		return $description;
+	}
+
+	/**
+	 * Display price of a product (lowest for variable products), '' when unknown/zero.
+	 *
+	 * @param int $product_id Product ID.
+	 */
+	private function price( int $product_id ): string {
+		$product = function_exists( 'wc_get_product' ) ? wc_get_product( $product_id ) : null;
+		if ( ! $product instanceof \WC_Product ) {
+			return '';
+		}
+		$value = (float) wc_get_price_to_display( $product );
+		if ( $value <= 0 ) {
+			return '';
+		}
+		$decimals = floor( $value ) === $value ? 0 : 2;
+		return number_format( $value, $decimals, ',', "\u{00A0}" );
 	}
 
 	/**
