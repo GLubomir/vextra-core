@@ -157,4 +157,90 @@ final class RankMath extends AbstractIntegration {
 	public function noindexes_subpages(): bool {
 		return $this->is_available() && class_exists( '\RankMath\Helper' ) && (bool) \RankMath\Helper::get_settings( 'titles.noindex_archive_subpages' );
 	}
+
+	/**
+	 * Hook the final SEO title filter (receives the title string before escaping).
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_title( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/frontend/title', $callback, 20 );
+		}
+	}
+
+	/**
+	 * Hook the final meta description filter (receives the description string before escaping).
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_description( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/frontend/description', $callback, 20 );
+		}
+	}
+
+	/**
+	 * Hook the breadcrumb trail filter. Items are `[ name, url, 'hide_in_schema' => bool ]`; the visible trail and the
+	 * BreadcrumbList JSON-LD are both built from this array.
+	 *
+	 * @param callable $callback Filter callback `( array $crumbs )`.
+	 */
+	public function filter_breadcrumb_items( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/frontend/breadcrumb/items', $callback, 20 );
+		}
+	}
+
+	/**
+	 * Hook the choice of the category used in a product's breadcrumb trail `( WP_Term $term, array $terms )`.
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_breadcrumb_main_term( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/frontend/breadcrumb/main_term', $callback, 20, 2 );
+		}
+	}
+
+	/**
+	 * Hook the Product schema entity filter (array of the Product JSON-LD node).
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_product_entity( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/snippet/rich_snippet_product_entity', $callback, 20 );
+		}
+	}
+
+	/**
+	 * Whether a post has a manually written SEO field (`title`, `description`).
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $key     Field without the `rank_math_` prefix.
+	 */
+	public function post_has_manual( int $post_id, string $key ): bool {
+		return $post_id > 0 && '' !== trim( (string) get_post_meta( $post_id, 'rank_math_' . $key, true ) );
+	}
+
+	/**
+	 * Whether a term has a manually written SEO field (`title`, `description`).
+	 *
+	 * @param int    $term_id Term ID.
+	 * @param string $key     Field without the `rank_math_` prefix.
+	 */
+	public function term_has_manual( int $term_id, string $key ): bool {
+		return $term_id > 0 && '' !== trim( (string) get_term_meta( $term_id, 'rank_math_' . $key, true ) );
+	}
+
+	/**
+	 * Primary term id chosen in the Rank Math editor (0 when none).
+	 *
+	 * @param int    $post_id  Post ID.
+	 * @param string $taxonomy Taxonomy.
+	 */
+	public function primary_term_id( int $post_id, string $taxonomy ): int {
+		return $post_id > 0 ? (int) get_post_meta( $post_id, 'rank_math_primary_' . $taxonomy, true ) : 0;
+	}
 }

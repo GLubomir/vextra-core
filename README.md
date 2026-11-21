@@ -58,3 +58,23 @@ flag filter `vextra/core/multilang/enabled`.
 wp vextra multilang pages [--dry-run]                          # create missing RU Woo pages (idempotent)
 wp vextra multilang sync-products [--ids=<ids>] [--dry-run]    # align twins from the UA products (batches of 50)
 ```
+
+## Seo module (Rank Math + Polylang + WooCommerce)
+
+Enabled only when all three are available; flag filter `vextra/core/seo/enabled`. Rank Math stays the only emitter of `<head>` and
+JSON-LD; the module filters its data through `Integrations\RankMath` (all Rank Math hook names live there; every method is a no-op
+when Rank Math is absent, filters fail open).
+
+- `TermCounts`: hierarchical published-product count per `product_cat` (UA + RU) from one bulk SQL, cached in group `seo`,
+  flushed on product/term writes; WP's direct-only `term.count` is never read. `Robots`: `product_cat` is `index` iff it has products
+  in itself or a descendant and is not manually noindex (never touches `product_tag`, `pa_*`, search, or a private site).
+- `Sitemap`: term sitemap in both languages (widens `get_terms` for sitemap requests only, entries filtered by the same rule),
+  `/catalog/` listed once, stored term sitemap invalidated when the indexable set changes. `Multilang\Hreflang` prints category
+  alternates only when the twin is indexable too.
+- `Templates` (`vextra/seo/templates`), `Breadcrumbs` (home label/URL per language, `Каталог` crumb, product trail category),
+  `Schema` (Product `name` = product name).
+
+```
+wp vextra seo status [--format=table|json|csv]   # per category: counts, robots result, in sitemap
+wp vextra seo recount                             # Woo term recount + drop the SEO count cache
+```

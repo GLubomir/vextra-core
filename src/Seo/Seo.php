@@ -55,6 +55,11 @@ final class Seo implements ModuleInterface {
 		( new Robots( $rank, $counts ) )->register();
 		( new Sitemap( $rank, $counts ) )->register();
 
+		$templates = new Templates( $pll, $rank );
+		$templates->register();
+		( new Breadcrumbs( $pll, $rank, $templates ) )->register();
+		( new Schema( $rank ) )->register();
+
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			( new Cli( $pll, $rank, $counts ) )->register();
 		}
