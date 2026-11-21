@@ -48,3 +48,73 @@ msgstr "vextra-core требует PHP %s или новее."
 #, php-format
 msgid "vextra-core потребує WordPress %s або новішої версії."
 msgstr "vextra-core требует WordPress %s или новее."
+
+#: src/Guard/Responder.php
+msgid "Забагато запитів. Спробуйте за кілька секунд."
+msgstr ""
+
+#: src/Guard/Responder.php
+msgid "Забагато запитів"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Деактивуйте плагін, що дублює Rank Math (title, schema, sitemap, редиректи)."
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Активний інший мультимовний плагін: модуль multilang вимкнено"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Підтримуваний мультимовний плагін — Polylang. Деактивуйте конфліктний плагін, модуль увімкнеться сам."
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін редиректів поруч із редиректами vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Редиректи слагів і термінів веде vextra-core (через Rank Math). Перевірте, що правила не дублюються."
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін списку бажань (власна функція планується)"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Інформаційно: після появи власного списку бажань плагін доведеться вимкнути."
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін безпеки з лімітами запитів поруч із модулем guard"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403."
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "У Rank Math заповнено редактор robots.txt: він замінює базовий текст, у якому guard об’єднує свої правила"
+msgstr ""
+
+#: src/Compat/Conflicts.php
+msgid "Залиште в редакторі рядок «Sitemap:» або очистіть редактор (Rank Math → Загальні налаштування → Редактор robots.txt)."
+msgstr ""
+
+#. translators: %s: module id
+#: src/Admin/ConflictNotices.php
+#, php-format
+msgid "Модуль «%s» вимкнено."
+msgstr ""

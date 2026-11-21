@@ -30,7 +30,7 @@ final class Cli {
 			'vextra compat',
 			[ $this, 'compat' ],
 			[
-				'shortdesc' => 'Installed vs tested versions (docs/versions.md) and the required third-party API checks. Exit 1 when a REQUIRED API is missing.',
+				'shortdesc' => 'Installed vs tested versions (docs/versions.md) and the required third-party API checks. Plugin conflicts. Exit 1 when a REQUIRED API is missing or a BLOCKING conflict is active.',
 				'synopsis'  => [
 					[
 						'type'        => 'assoc',
@@ -156,20 +156,31 @@ final class Cli {
 			$messages[] = 'WARNING: untested version, run smoke + update log (docs/versions.md).';
 		}
 
-		$ok = array() === $missing;
+		$conflicts = $this->compat->conflicts()->evaluate();
+		$blocking  = 0;
+		foreach ( $conflicts as $row ) {
+			if ( $row['active'] && $row['blocking'] ) {
+				++$blocking;
+				$messages[] = sprintf( 'CONFLICT [%s] %s %s', $row['id'], $row['title'], $row['fix_hint'] );
+			}
+		}
+
+		$ok = array() === $missing && 0 === $blocking;
 		if ( 'json' === $format ) {
 			\WP_CLI::line(
 				(string) wp_json_encode(
 					[
-						'versions' => $versions,
-						'apis'     => array_map( [ $this, 'public_api_row' ], $apis ),
-						'summary'  => [
-							'required_missing' => count( $missing ),
-							'warnings'         => $warnings,
-							'version_drift'    => $drift,
-							'ok'               => $ok,
+						'versions'  => $versions,
+						'apis'      => array_map( [ $this, 'public_api_row' ], $apis ),
+						'conflicts' => $conflicts,
+						'summary'   => [
+							'required_missing'   => count( $missing ),
+							'conflicts_blocking' => $blocking,
+							'warnings'           => $warnings,
+							'version_drift'      => $drift,
+							'ok'                 => $ok,
 						],
-						'messages' => $messages,
+						'messages'  => $messages,
 					]
 				)
 			);
@@ -193,10 +204,28 @@ final class Cli {
 				),
 				[ 'plugin', 'kind', 'name', 'required', 'status' ]
 			);
+			\WP_CLI::log( 'Conflicts:' );
+			\WP_CLI\Utils\format_items(
+				'table',
+				array_map(
+					static function ( array $row ): array {
+						return [
+							'id'       => $row['id'],
+							'module'   => $row['module'],
+							'action'   => $row['action'],
+							'blocking' => $row['blocking'] ? 'yes' : 'no',
+							'status'   => $row['active'] ? ( $row['yielded'] ? 'ACTIVE (yielded)' : 'ACTIVE' ) : 'ok',
+							'hint'     => $row['active'] ? $row['fix_hint'] : '',
+						];
+					},
+					$conflicts
+				),
+				[ 'id', 'module', 'action', 'blocking', 'status', 'hint' ]
+			);
 			foreach ( $messages as $message ) {
 				\WP_CLI::log( $message );
 			}
-			\WP_CLI::log( sprintf( 'Required missing: %d | optional warnings: %d | version drift: %d', count( $missing ), $warnings, $drift ) );
+			\WP_CLI::log( sprintf( 'Required missing: %d | optional warnings: %d | version drift: %d | blocking conflicts: %d', count( $missing ), $warnings, $drift, $blocking ) );
 		}
 
 		if ( ! $ok ) {

@@ -145,6 +145,25 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * A Rank Math setting by its dotted path (e.g. `general.redirections_post_redirect`) through the public
+	 * `Helper::get_settings()`. Returns `$fallback` when Rank Math or the API is absent or the call fails.
+	 *
+	 * @param string $path    Dotted path `<group>.<key>`.
+	 * @param mixed  $fallback Value when unavailable.
+	 * @return mixed
+	 */
+	public function setting( string $path, $fallback = null ) {
+		if ( ! $this->is_available() || ! class_exists( '\RankMath\Helper' ) || ! method_exists( '\RankMath\Helper', 'get_settings' ) ) {
+			return $fallback;
+		}
+		try {
+			return \RankMath\Helper::get_settings( $path, $fallback );
+		} catch ( \Throwable $e ) {
+			return $fallback;
+		}
+	}
+
+	/**
 	 * Whether the current request is a multi-term archive (Rank Math noindexes those; automation must not undo it).
 	 */
 	public function is_multiple_terms_query(): bool {

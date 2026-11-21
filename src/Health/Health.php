@@ -62,7 +62,7 @@ final class Health implements ModuleInterface {
 
 		\WP_CLI::log( 'vextra-core ' . $data['plugin_version'] . ' | PHP ' . $data['php'] . ' | WP ' . $data['wp'] . ' | WC ' . ( $data['wc'] ?? 'n/a' ) );
 		\WP_CLI::log( 'Modules:' );
-		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['modules'] ), [ 'id', 'enabled' ] );
+		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['modules'] ), [ 'id', 'enabled', 'yielded' ] );
 		\WP_CLI::log( 'Integrations:' );
 		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['integrations'] ), [ 'id', 'available', 'version', 'ready' ] );
 	}
@@ -93,9 +93,11 @@ final class Health implements ModuleInterface {
 	private function collect( Plugin $plugin ): array {
 		$modules = [];
 		foreach ( $plugin->modules() as $module ) {
+			$yielded   = in_array( $module->id(), $plugin->yielded(), true );
 			$modules[] = [
 				'id'      => $module->id(),
-				'enabled' => $module->is_enabled(),
+				'enabled' => $module->is_enabled() && ! $yielded,
+				'yielded' => $yielded,
 			];
 		}
 
