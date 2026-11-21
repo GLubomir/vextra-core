@@ -150,9 +150,8 @@ final class StoreApi {
 			return null; // Woo's limiter counts the rest of the Store API.
 		}
 
-		if ( is_user_logged_in() ) {
-			return null;
-		}
+		// Everyone who is not exempt is limited; signed-in users get their own key.
+		$ip = is_user_logged_in() ? 'u' . get_current_user_id() : $ip;
 
 		if ( 'GET' === strtoupper( $request->get_method() ) && 1 === preg_match( self::LISTING, $route ) ) {
 			$cap = Config::get( 'per_page_cap' );
