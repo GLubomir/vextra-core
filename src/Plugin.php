@@ -24,6 +24,7 @@ use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
 use Vextra\Core\Seo\Seo;
+use Vextra\Core\Seo\Urls;
 
 final class Plugin {
 
@@ -34,6 +35,7 @@ final class Plugin {
 		Health::class,
 		Multilang::class,
 		Seo::class,
+		Urls::class,
 		Dev::class,
 		Compat::class,
 	];

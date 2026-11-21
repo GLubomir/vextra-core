@@ -56,6 +56,58 @@ final class Hreflang {
 
 	public function register(): void {
 		add_filter( 'pll_rel_hreflang_attributes', [ $this, 'filter' ] );
+		add_action( 'wp_head', [ $this, 'print_paged' ], 2 );
+	}
+
+	/**
+	 * Hreflang of PAGINATED catalogue archives (`/catalog/page/N/` <-> `/ru/catalog/page/N/`, same for `product_cat`).
+	 *
+	 * Polylang prints nothing on paged archives and its translation URLs ignore the page number, so the set is built here from
+	 * the translation group (shop page / category twins) plus `page/N/`. Page N of a twin is assumed to exist when it exists in
+	 * the current language (twins are kept 1:1 by ProductSync; a category whose twin is not indexable is dropped by filter()).
+	 * Only shop and `product_cat` archives; singular pages, search and other archives print nothing. Same output rules as filter().
+	 */
+	public function print_paged(): void {
+		if ( ! is_paged() || is_singular() ) {
+			return;
+		}
+		$paged = max( 1, (int) get_query_var( 'paged' ) );
+		global $wp_query;
+		if ( $paged < 2 || $paged > max( 1, (int) ( $wp_query->max_num_pages ?? 1 ) ) ) {
+			return;
+		}
+
+		if ( is_tax( TermCounts::TAXONOMY ) ) {
+			$group = [];
+			foreach ( $this->polylang->term_translations( (int) get_queried_object_id() ) as $lang => $id ) {
+				$link = get_term_link( (int) $id, TermCounts::TAXONOMY );
+				if ( is_string( $link ) && '' !== $link ) {
+					$group[ (string) $lang ] = $link;
+				}
+			}
+		} elseif ( function_exists( 'is_shop' ) && is_shop() && function_exists( 'wc_get_page_id' ) && wc_get_page_id( 'shop' ) > 0 ) {
+			$group = [];
+			foreach ( $this->polylang->translations( (int) wc_get_page_id( 'shop' ) ) as $lang => $id ) {
+				$link = get_permalink( (int) $id );
+				if ( is_string( $link ) && '' !== $link && 'publish' === get_post_status( (int) $id ) ) {
+					$group[ (string) $lang ] = $link;
+				}
+			}
+		} else {
+			return;
+		}
+
+		$base = (string) $GLOBALS['wp_rewrite']->pagination_base;
+		$map  = [];
+		foreach ( $this->polylang->locale_codes() as $slug => $code ) {
+			if ( isset( $group[ $slug ] ) ) {
+				$map[ $code ] = trailingslashit( $group[ $slug ] ) . $base . '/' . $paged . '/';
+			}
+		}
+
+		foreach ( $this->filter( $map ) as $code => $url ) {
+			printf( '<link rel="alternate" href="%s" hreflang="%s" />' . "\n", esc_url( $url ), esc_attr( (string) $code ) );
+		}
 	}
 
 	/**
