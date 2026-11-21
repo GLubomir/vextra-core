@@ -215,6 +215,253 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * Hook the global JSON-LD graph filter `( array $data, JsonLD $jsonld )`: array of nodes keyed by Rank Math ids
+	 * (`publisher` = Organization, `WebSite`, `WebPage`, `richSnippet`, ...).
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_json_ld( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/json_ld', $callback, 100, 2 );
+		}
+	}
+
+	/**
+	 * Whether the Redirections module of Rank Math is active and its storage classes are present.
+	 * INTERNAL API (docs/compat/integrations.md): `RankMath\Redirections\DB` has no public documentation; every call below is
+	 * guarded and a failure degrades to "no redirect written" (the caller logs once).
+	 */
+	public function redirections_available(): bool {
+		return $this->is_available()
+			&& class_exists( '\RankMath\Redirections\DB' )
+			&& class_exists( '\RankMath\Helper' )
+			&& method_exists( '\RankMath\Helper', 'is_module_active' )
+			&& \RankMath\Helper::is_module_active( 'redirections' );
+	}
+
+	/**
+	 * Create a redirect. `$source` is a path relative to the site root without leading/trailing slash (`ru/catalog/a/b`) for
+	 * `exact`, or a regex without delimiters for `regex`. The destination MUST be on this site (open redirects are refused).
+	 *
+	 * @param string $source      Source pattern.
+	 * @param string $destination Absolute destination URL on this host (regex replacement tokens like `$1` allowed).
+	 * @param int    $code        HTTP code (301 or 308 only).
+	 * @param string $comparison  `exact` or `regex`.
+	 * @return int Redirect id, 0 on failure.
+	 */
+	public function add_redirect( string $source, string $destination, int $code = 301, string $comparison = 'exact' ): int {
+		if ( ! $this->redirections_available() || ! in_array( $code, [ 301, 308 ], true ) || ! in_array( $comparison, [ 'exact', 'regex' ], true ) ) {
+			return 0;
+		}
+		$source      = $this->clean_pattern( $source, $comparison );
+		$destination = $this->clean_destination( $destination );
+		if ( '' === $source || '' === $destination ) {
+			return 0;
+		}
+		try {
+			$id = \RankMath\Redirections\DB::add(
+				[
+					'sources'     => [
+						[
+							'ignore'     => '',
+							'pattern'    => $source,
+							'comparison' => $comparison,
+						],
+					],
+					'url_to'      => $destination,
+					'header_code' => (string) $code,
+				]
+			);
+		} catch ( \Throwable $e ) {
+			return 0;
+		}
+		return is_numeric( $id ) ? max( 0, (int) $id ) : 0;
+	}
+
+	/**
+	 * Point an existing redirect to another destination (same host only).
+	 *
+	 * @param int    $id          Redirect id.
+	 * @param string $destination Absolute destination URL.
+	 */
+	public function update_redirect_destination( int $id, string $destination ): bool {
+		$destination = $this->clean_destination( $destination );
+		$row         = $this->get_redirect( $id );
+		if ( null === $row || '' === $destination ) {
+			return false;
+		}
+		try {
+			\RankMath\Redirections\DB::update(
+				[
+					'id'          => $id,
+					'sources'     => $row['sources'],
+					'url_to'      => $destination,
+					'header_code' => (string) $row['header_code'],
+					'status'      => 'active',
+				]
+			);
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * One redirect by id (not trashed), normalised: `id`, `sources` (list of `pattern`/`comparison`/`ignore`), `url_to`, `header_code`.
+	 *
+	 * @param int $id Redirect id.
+	 * @return array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}|null
+	 */
+	public function get_redirect( int $id ): ?array {
+		if ( $id <= 0 || ! $this->redirections_available() ) {
+			return null;
+		}
+		try {
+			$row = \RankMath\Redirections\DB::get_redirection_by_id( $id );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+		return is_array( $row ) ? $this->normalise_redirect( $row ) : null;
+	}
+
+	/**
+	 * Redirects whose destination equals the URL (trailing slash insensitive).
+	 *
+	 * @param string $url Destination URL.
+	 * @return array<int,array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}>
+	 */
+	public function find_redirects_to( string $url ): array {
+		$out = [];
+		foreach ( $this->search_redirects( $url ) as $row ) {
+			if ( untrailingslashit( $row['url_to'] ) === untrailingslashit( $url ) ) {
+				$out[] = $row;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Redirects having this exact source pattern.
+	 *
+	 * @param string $source     Source pattern (see add_redirect()).
+	 * @param string $comparison `exact` or `regex`.
+	 * @return array<int,array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}>
+	 */
+	public function find_redirects_from( string $source, string $comparison = 'exact' ): array {
+		$source = $this->clean_pattern( $source, $comparison );
+		$out    = [];
+		if ( '' === $source ) {
+			return $out;
+		}
+		foreach ( $this->search_redirects( $source ) as $row ) {
+			foreach ( $row['sources'] as $src ) {
+				if ( ( $src['comparison'] ?? 'exact' ) === $comparison && trim( (string) ( $src['pattern'] ?? '' ), '/' ) === $source ) {
+					$out[] = $row;
+					break;
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Delete a redirect (and Rank Math's lookup cache of it).
+	 *
+	 * @param int $id Redirect id.
+	 */
+	public function delete_redirect( int $id ): bool {
+		if ( $id <= 0 || ! $this->redirections_available() ) {
+			return false;
+		}
+		try {
+			\RankMath\Redirections\DB::delete( [ $id ] );
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Candidate rows for a LIKE search over sources and destinations (bounded to 200, trashed ones excluded).
+	 *
+	 * @param string $needle Search string.
+	 * @return array<int,array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}>
+	 */
+	private function search_redirects( string $needle ): array {
+		if ( '' === $needle || ! $this->redirections_available() ) {
+			return [];
+		}
+		try {
+			$res = \RankMath\Redirections\DB::get_redirections(
+				[
+					'search' => $needle,
+					'limit'  => 200,
+					'status' => 'any',
+				]
+			);
+		} catch ( \Throwable $e ) {
+			return [];
+		}
+		$out = [];
+		foreach ( (array) ( $res['redirections'] ?? [] ) as $row ) {
+			if ( is_array( $row ) && 'trashed' !== ( $row['status'] ?? '' ) ) {
+				$out[] = $this->normalise_redirect( $row );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Normalise a redirections row (sources may be serialized).
+	 *
+	 * @param array<string,mixed> $row DB row.
+	 * @return array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}
+	 */
+	private function normalise_redirect( array $row ): array {
+		$sources = $row['sources'] ?? [];
+		$sources = is_string( $sources ) ? maybe_unserialize( $sources ) : $sources;
+		return [
+			'id'          => (int) ( $row['id'] ?? 0 ),
+			'sources'     => is_array( $sources ) ? array_values( $sources ) : [],
+			'url_to'      => (string) ( $row['url_to'] ?? '' ),
+			'header_code' => (int) ( $row['header_code'] ?? 301 ),
+		];
+	}
+
+	/**
+	 * Redirect source pattern: no tags/control characters, no leading/trailing slash for `exact`, no `..` segments.
+	 *
+	 * @param string $pattern    Pattern.
+	 * @param string $comparison `exact` or `regex`.
+	 */
+	private function clean_pattern( string $pattern, string $comparison ): string {
+		$pattern = trim( wp_strip_all_tags( $pattern ) );
+		$pattern = (string) preg_replace( '/[\x00-\x1F\x7F]/', '', $pattern );
+		if ( 'exact' === $comparison ) {
+			$pattern = trim( rawurldecode( $pattern ), '/' );
+			if ( str_contains( $pattern, '..' ) || str_contains( $pattern, '://' ) || str_contains( $pattern, '?' ) ) {
+				return '';
+			}
+		}
+		return $pattern;
+	}
+
+	/**
+	 * Destination must be an http(s) URL on this site's host.
+	 *
+	 * @param string $url URL.
+	 */
+	private function clean_destination( string $url ): string {
+		$url  = esc_url_raw( trim( $url ), [ 'http', 'https' ] );
+		$host = wp_parse_url( $url, PHP_URL_HOST );
+		$mine = wp_parse_url( (string) get_option( 'home' ), PHP_URL_HOST );
+		if ( '' === $url || ! is_string( $host ) || ! is_string( $mine ) || strtolower( $host ) !== strtolower( $mine ) ) {
+			return '';
+		}
+		return $url;
+	}
+
+	/**
 	 * Whether a post has a manually written SEO field (`title`, `description`).
 	 *
 	 * @param int    $post_id Post ID.

@@ -78,3 +78,30 @@ when Rank Math is absent, filters fail open).
 wp vextra seo status [--format=table|json|csv]   # per category: counts, robots result, in sitemap
 wp vextra seo recount                             # Woo term recount + drop the SEO count cache
 ```
+
+
+### SEO URL hygiene (TASK-009e)
+
+- **Slugs** (`Seo\Urls` module -> `Slugs` + `Transliterator`; works without Polylang/Rank Math, flag `vextra/core/seo/slugs_enabled`): NEW terms
+  (`product_cat`, `product_tag`, every `pa_*`) and NEW posts/pages/products get a latin slug when the title (or a typed slug) is Cyrillic.
+  Tables: UA = Cabinet of Ministers No. 55 (2010) with positional `є ї й ю я` and `зг`->`zgh`; RU = registry of `docs/seo/ru-category-slugs.md`.
+  Lowercase `[a-z0-9-]`, <=60 chars cut at a hyphen. Existing slugs and latin slugs are never touched. A suffix produced by the uniqueness
+  check (`-2`, `-ru`) is logged (`vextra-seo`) so it can be fixed before indexation.
+  **Import contract**: the table is chosen from the language of the object. Importers/CLI that insert BEFORE telling Polylang the language
+  MUST pass it: filter `vextra/seo/slug_language` (`( string $lang, string $kind term|post, array $context )`) or a `lang` argument of
+  `wp_insert_term()` / `wp_insert_post()`; otherwise a title made only of shared letters falls back to the default (UA) table.
+  Order: filter, `lang` arg, admin form value (`term_lang_choice`/`post_lang_choice`), stored post language, letters `ы э ё ъ`/`і ї є ґ`, default.
+- **Category 301** (`TermRedirects`): re-slug or move of a `product_cat` writes single-hop 301s (Rank Math Redirections) for the term and every
+  descendant plus a `/page/N/` regex row; chains collapse, redirects whose source became live are removed, no-op saves write nothing, subtree cap 500.
+  Redirects of this module are tracked in option `vx_seo_redirect_ids` (not autoloaded). Term DELETE is not handled (import task).
+- **`pa_*`** archives: `noindex, follow`, never in a sitemap (`Attributes`).
+- **Organization** (`Organization`): enriches Rank Math's single Organization node with `sameAs`, one `ContactPoint` (phone/email), `url`, `logo` from filter
+  `vextra/seo/organization_data` (`same_as`, `telephone` E.164, `email`, `logo`); the theme answers it, an empty answer adds nothing. Home page = WebPage
+  only (Article/Person author removed).
+- **Sitemap**: `_vx_demo` pages/posts (front page and its translations excepted) and Rank Math noindex pages/posts are excluded; demo products stay.
+- **Hreflang** on paginated shop/category archives: `/catalog/page/N/` <-> `/ru/catalog/page/N/`.
+
+```
+wp vextra seo transliterate "<text>" [--lang=uk|ru] [--max=60]   # pure, prints the slug
+wp vextra seo redirects [--format=table|json|csv]                 # redirects written by TermRedirects
+```

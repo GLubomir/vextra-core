@@ -27,6 +27,31 @@ final class Schema {
 
 	public function register(): void {
 		$this->rank_math->filter_product_entity( [ $this, 'product' ] );
+		$this->rank_math->filter_json_ld( [ $this, 'home_graph' ] );
+	}
+
+	/**
+	 * Home page (every language) is a plain WebPage: Rank Math's default page schema (Article + Person author with the admin's
+	 * Gravatar and `sameAs` = site URL) is removed. Organization, WebSite, WebPage and the breadcrumbs stay.
+	 *
+	 * @param mixed $graph JSON-LD nodes keyed by Rank Math.
+	 * @return mixed
+	 */
+	public function home_graph( $graph ) {
+		if ( ! is_array( $graph ) || ! is_front_page() ) {
+			return $graph;
+		}
+		foreach ( $graph as $key => $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+			$types = array_map( 'strval', (array) ( $node['@type'] ?? [] ) );
+			$id    = (string) ( $node['@id'] ?? '' );
+			if ( array_intersect( $types, [ 'Article', 'BlogPosting', 'NewsArticle' ] ) || ( in_array( 'Person', $types, true ) && str_ends_with( $id, '#author' ) ) ) {
+				unset( $graph[ $key ] );
+			}
+		}
+		return $graph;
 	}
 
 	/**

@@ -1,6 +1,7 @@
 <?php
 /**
- * WP-CLI: `wp vextra seo status` (read-only) and `wp vextra seo recount` (idempotent). CLI only, no web entry point.
+ * WP-CLI: `wp vextra seo status` (read-only), `wp vextra seo recount` (idempotent), `wp vextra seo transliterate` (pure) and
+ * `wp vextra seo redirects` (read-only list of the redirects written by TermRedirects). CLI only, no web entry point.
  *
  * @package Vextra\Core
  */
@@ -35,10 +36,18 @@ final class Cli {
 	 */
 	private TermCounts $counts;
 
-	public function __construct( Polylang $polylang, RankMath $rank_math, TermCounts $counts ) {
+	/**
+	 * Transliterator.
+	 *
+	 * @var Transliterator
+	 */
+	private Transliterator $translit;
+
+	public function __construct( Polylang $polylang, RankMath $rank_math, TermCounts $counts, Transliterator $translit ) {
 		$this->polylang  = $polylang;
 		$this->rank_math = $rank_math;
 		$this->counts    = $counts;
+		$this->translit  = $translit;
 	}
 
 	public function register(): void {
@@ -64,6 +73,86 @@ final class Cli {
 				'shortdesc' => 'Run the WooCommerce term recount and drop the SEO count cache (idempotent).',
 			]
 		);
+		\WP_CLI::add_command(
+			'vextra seo transliterate',
+			[ $this, 'transliterate' ],
+			[
+				'shortdesc' => 'Print the slug the Seo module would create for a text (pure, writes nothing).',
+				'synopsis'  => [
+					[
+						'type'     => 'positional',
+						'name'     => 'text',
+						'optional' => false,
+					],
+					[
+						'type'     => 'assoc',
+						'name'     => 'lang',
+						'optional' => true,
+						'default'  => 'uk',
+						'options'  => [ 'uk', 'ru' ],
+					],
+					[
+						'type'     => 'assoc',
+						'name'     => 'max',
+						'optional' => true,
+						'default'  => (string) Transliterator::DEFAULT_MAX,
+					],
+				],
+			]
+		);
+		\WP_CLI::add_command(
+			'vextra seo redirects',
+			[ $this, 'redirects' ],
+			[
+				'shortdesc' => 'Read-only list of the redirects written by the category move/re-slug handler (Rank Math Redirections).',
+				'synopsis'  => [
+					[
+						'type'     => 'assoc',
+						'name'     => 'format',
+						'optional' => true,
+					],
+				],
+			]
+		);
+	}
+
+	/**
+	 * Command: transliterate.
+	 *
+	 * @param array<int,string>    $args  Positional args (text).
+	 * @param array<string,string> $assoc Assoc args (lang, max).
+	 */
+	public function transliterate( array $args, array $assoc ): void {
+		$lang = isset( $assoc['lang'] ) ? sanitize_key( $assoc['lang'] ) : 'uk';
+		$max  = isset( $assoc['max'] ) ? max( 1, (int) $assoc['max'] ) : Transliterator::DEFAULT_MAX;
+		\WP_CLI::line( $this->translit->transliterate( (string) ( $args[0] ?? '' ), $lang, $max ) );
+	}
+
+	/**
+	 * Command: redirects.
+	 *
+	 * @param array<int,string>    $args  Positional args (unused).
+	 * @param array<string,string> $assoc Assoc args.
+	 */
+	public function redirects( array $args, array $assoc ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$rows = [];
+		foreach ( TermRedirects::owned() as $id ) {
+			$row = $this->rank_math->get_redirect( $id );
+			if ( null === $row ) {
+				continue;
+			}
+			$src    = $row['sources'][0] ?? [];
+			$rows[] = [
+				'id'         => $id,
+				'type'       => $row['header_code'],
+				'comparison' => (string) ( $src['comparison'] ?? '' ),
+				'source'     => (string) ( $src['pattern'] ?? '' ),
+				'to'         => $row['url_to'],
+			];
+		}
+		$format = isset( $assoc['format'] ) ? (string) $assoc['format'] : 'table';
+		\WP_CLI\Utils\format_items( $format, $rows, [ 'id', 'type', 'comparison', 'source', 'to' ] );
+		\WP_CLI::log( sprintf( '%d redirect(s) owned by the Seo module.', count( $rows ) ) );
 	}
 
 	/**
