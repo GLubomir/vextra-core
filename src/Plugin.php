@@ -14,6 +14,7 @@ namespace Vextra\Core;
 
 use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Vextra\Core\Admin\Notices;
+use Vextra\Core\Compat\Compat;
 use Vextra\Core\Contracts\ModuleInterface;
 use Vextra\Core\Dev\Dev;
 use Vextra\Core\Health\Health;
@@ -34,6 +35,7 @@ final class Plugin {
 		Multilang::class,
 		Seo::class,
 		Dev::class,
+		Compat::class,
 	];
 
 	/**
