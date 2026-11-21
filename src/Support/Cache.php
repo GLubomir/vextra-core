@@ -4,8 +4,9 @@
  * duplicated on purpose (the plugin must not depend on the theme) with its own prefixes.
  *
  * External object cache present: wp_cache_* with the group version from wp_cache_get_last_changed().
- * Otherwise: transients (`vx_core_*`), group version in a non-autoloaded option `vx_core_cache_ver_{group}`,
- * bumped by flush(). The caller puts the language (and anything else that varies) into $key.
+ * Otherwise: transients (`vx_core_*`), group version in an autoloaded option `vx_core_cache_ver_{group}` (no query
+ * per read, TASK-035; older rows become autoloaded at their next flush()), bumped by flush().
+ * The caller puts the language (and anything else that varies) into $key.
  * Never cache per-user or per-request state.
  *
  * @package Vextra\Core
@@ -81,9 +82,9 @@ final class Cache {
 
 		$version = (string) microtime( true );
 		if ( false === get_option( self::option_name( $group ), false ) ) {
-			add_option( self::option_name( $group ), $version, '', 'no' );
+			add_option( self::option_name( $group ), $version, '', true );
 		} else {
-			update_option( self::option_name( $group ), $version, false );
+			update_option( self::option_name( $group ), $version, true );
 		}
 		self::$versions[ $group ] = $version;
 	}
@@ -98,7 +99,7 @@ final class Cache {
 		} else {
 			$version = get_option( self::option_name( $group ), false );
 			if ( ! is_string( $version ) || '' === $version ) {
-				add_option( self::option_name( $group ), '1', '', 'no' );
+				add_option( self::option_name( $group ), '1', '', true );
 				$version = '1';
 			}
 		}
