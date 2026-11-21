@@ -113,6 +113,24 @@ final class Polylang extends AbstractIntegration {
 	}
 
 	/**
+	 * Warm the WordPress post and object-term caches of a batch of posts in one go (TASK-035). Polylang reads post
+	 * languages and translation groups through these core caches, so later lookups of the same posts cost no query.
+	 * Core cache API only: should Polylang change its storage, the call merely loses its effect. Only ids not yet
+	 * cached are fetched.
+	 *
+	 * @param int[]  $post_ids    Post IDs.
+	 * @param string $object_type Object type whose taxonomies are warmed (post type).
+	 */
+	public function prime_posts( array $post_ids, string $object_type = 'page' ): void {
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $post_ids ) ) ) );
+		if ( [] === $ids || ! $this->is_ready() ) {
+			return;
+		}
+		_prime_post_caches( $ids, false, false );
+		update_object_term_cache( $ids, $object_type );
+	}
+
+	/**
 	 * Translation of a post in a language (0 when none; the post itself for its own language).
 	 *
 	 * @param int    $post_id Post ID.

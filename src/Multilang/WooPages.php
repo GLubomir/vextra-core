@@ -61,6 +61,13 @@ final class WooPages {
 	 */
 	private array $memo = [];
 
+	/**
+	 * Woo pages and their translations warmed (once per request).
+	 *
+	 * @var bool
+	 */
+	private bool $primed = false;
+
 	public function __construct( Polylang $polylang, RankMath $rank_math ) {
 		$this->polylang  = $polylang;
 		$this->rank_math = $rank_math;
@@ -92,6 +99,11 @@ final class WooPages {
 			return $page_id;
 		}
 
+		if ( ! $this->primed ) {
+			$this->primed = true;
+			$this->prime_pages();
+		}
+
 		$memo = $base . ':' . $lang;
 		if ( ! isset( $this->memo[ $memo ] ) ) {
 			$translated          = $this->polylang->translate_post( $base, $lang );
@@ -99,6 +111,36 @@ final class WooPages {
 		}
 
 		return $this->memo[ $memo ];
+	}
+
+	/**
+	 * Warm the page-id options, the mapped Woo pages and all their translations in a few batch queries (TASK-035):
+	 * without it every page id read, translation lookup and translated permalink (header, footer, speculation rules)
+	 * costs its own query on every front request.
+	 */
+	private function prime_pages(): void {
+		$options = [];
+		foreach ( self::MAPPED as $key ) {
+			$options[] = 'woocommerce_' . $key . '_page_id';
+		}
+		wp_prime_option_caches( $options );
+
+		$base = [];
+		foreach ( $options as $option ) {
+			$id = (int) get_option( $option );
+			if ( $id > 0 ) {
+				$base[] = $id;
+			}
+		}
+		$this->polylang->prime_posts( $base );
+
+		$all = $base;
+		foreach ( $base as $id ) {
+			foreach ( $this->polylang->translations( $id ) as $translated ) {
+				$all[] = (int) $translated;
+			}
+		}
+		$this->polylang->prime_posts( $all );
 	}
 
 	/**
