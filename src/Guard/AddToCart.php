@@ -26,6 +26,7 @@ final class AddToCart {
 	}
 
 	public function handle(): void {
+		Failsafe::run( 'add-to-cart-post', fn() => $this->limit_post() );
 		$target = Failsafe::run( 'add-to-cart', fn(): string => $this->target(), '' );
 		if ( '' === $target ) {
 			return;
@@ -34,6 +35,23 @@ final class AddToCart {
 		nocache_headers();
 		wp_safe_redirect( $target, 302 );
 		exit;
+	}
+
+	/**
+	 * POST add-to-cart (Woo's own form has no nonce): per-IP bucket, 429 + Retry-After on excess.
+	 */
+	private function limit_post(): void {
+		if ( in_array( Request::method(), [ 'GET', 'HEAD' ], true ) ) {
+			return;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification
+		if ( ! array_key_exists( 'add-to-cart', $_REQUEST ) || Exempt::is_exempt() ) {
+			return;
+		}
+		$hit = RateLimiter::hit( 'cartpost', ClientIp::get(), Config::get( 'cartpost_limit' ), Config::get( 'cartpost_window' ) );
+		if ( ! $hit['allowed'] ) {
+			Responder::rate_limited( $hit['retry_after'], Responder::FORMAT_HTML, 'add-to-cart-post' );
+		}
 	}
 
 	/**

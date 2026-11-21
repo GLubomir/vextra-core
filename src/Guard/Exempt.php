@@ -17,7 +17,7 @@ final class Exempt {
 	 * Is the current request exempt from limits, route blocks and UA rules.
 	 */
 	public static function is_exempt(): bool {
-		$ip = ClientIp::get();
+		$ip = ClientIp::get( false );
 
 		/**
 		 * Filters the exemption of the current request.

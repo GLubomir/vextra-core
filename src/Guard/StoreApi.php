@@ -23,12 +23,12 @@ final class StoreApi {
 	 * (single, reviews, collection-data, attributes*, categories, tags, brands). Filter `vextra/core/guard/blocked_routes`.
 	 */
 	public const BLOCKED = [
-		'#^/wc/store(?:/v\d+)?/products(?:/|$)#',
+		'#^/wc/store(?:/v\d+)?/products(?:/|$)#i',
 	];
 
-	private const COUPON_ROUTE = '#^/wc/store(?:/v\d+)?/cart/(?:apply-coupon|coupons)(?:/|$)#';
-	private const STORE_ROUTE  = '#^/wc/store(?:/|$)#';
-	private const LISTING      = '#^/wp/v2/(?:product|product_cat|product_tag)(?:/|$)#';
+	private const COUPON_ROUTE = '#^/wc/store(?:/v\d+)?/cart/(?:apply-coupon|coupons)(?:/|$)#i';
+	private const STORE_ROUTE  = '#^/wc/store(?:/|$)#i';
+	private const LISTING      = '#^/wp/v2/(?:product|product_cat|product_tag)(?:/|$)#i';
 
 	public function register(): void {
 		add_filter( 'woocommerce_store_api_rate_limit_options', [ $this, 'limiter_options' ], 20 );
@@ -123,7 +123,7 @@ final class StoreApi {
 	 * @return \WP_REST_Response|null
 	 */
 	private function check( \WP_REST_Server $server, \WP_REST_Request $request ) {
-		$route = (string) $request->get_route();
+		$route = strtolower( (string) $request->get_route() );
 		if ( Exempt::is_exempt() ) {
 			return null;
 		}
@@ -186,7 +186,7 @@ final class StoreApi {
 		 */
 		$patterns = apply_filters( 'vextra/core/guard/blocked_routes', self::BLOCKED );
 		foreach ( (array) $patterns as $pattern ) {
-			if ( is_string( $pattern ) && 1 === @preg_match( $pattern, $route ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- filtered pattern may be invalid.
+			if ( is_string( $pattern ) && 1 === @preg_match( $pattern, strtolower( $route ) ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- filtered pattern may be invalid.
 				return true;
 			}
 		}

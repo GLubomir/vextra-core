@@ -58,6 +58,16 @@ final class Request {
 	 * "disallow all" / crawl-rate signal).
 	 */
 	public static function is_never_limited(): bool {
+		// Only a plain GET/HEAD without routing args is exempt: wc-ajax / rest_route / add-to-cart work on any path.
+		if ( ! in_array( self::method(), [ 'GET', 'HEAD' ], true ) || '' !== self::wc_ajax() ) {
+			return false;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- presence check only.
+		foreach ( [ 'wc-ajax', 'rest_route', 'add-to-cart' ] as $arg ) {
+			if ( array_key_exists( $arg, $_GET ) || array_key_exists( $arg, $_POST ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+				return false;
+			}
+		}
 		$path = self::path();
 		if ( '' === $path ) {
 			return false;
