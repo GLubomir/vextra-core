@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace Vextra\Core;
 
+use Vextra\Core\Guard\DraftOrders;
+
 final class Lifecycle {
 
 	private const MIN_PHP = '8.1';
@@ -27,6 +29,7 @@ final class Lifecycle {
 		}
 
 		update_option( 'vextra_core_version', VEXTRA_CORE_VERSION, false );
+		DraftOrders::ensure_scheduled();
 	}
 
 	/**
@@ -35,7 +38,9 @@ final class Lifecycle {
 	public static function deactivate(): void {
 		global $wpdb;
 
-		// No scheduled hooks yet. Future modules unschedule their own Action Scheduler hooks here.
+		// Modules unschedule their own Action Scheduler hooks here.
+		DraftOrders::unschedule();
+
 		$value   = $wpdb->esc_like( '_transient_vx_core_' ) . '%';
 		$timeout = $wpdb->esc_like( '_transient_timeout_vx_core_' ) . '%';
 		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $value, $timeout ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
