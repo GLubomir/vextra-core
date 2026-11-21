@@ -16,6 +16,7 @@ use Vextra\Core\Contracts\ModuleInterface;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Plugin;
+use Vextra\Core\Seo\TermCounts;
 
 final class Multilang implements ModuleInterface {
 
@@ -52,7 +53,9 @@ final class Multilang implements ModuleInterface {
 		$sync->register();
 		( new StockSync( $pll ) )->register();
 		( new OrderLanguage( $pll ) )->register();
-		( new Hreflang( $pll, $rank ) )->register();
+		$counts = new TermCounts( $rank );
+		$counts->register();
+		( new Hreflang( $pll, $rank, $counts ) )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			( new Cli( $pll, $sync ) )->register();

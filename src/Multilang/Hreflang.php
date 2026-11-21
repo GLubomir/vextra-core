@@ -5,7 +5,8 @@
  * Polylang (verified 3.9.2: `src/frontend/frontend-filters-links.php`) prints the set from `wp_head` only on translated,
  * non-paged pages and passes it through filter `pll_rel_hreflang_attributes` (array code => URL). This class rewrites
  * that array; it never prints anything itself. Dropped (empty array = nothing printed): search, 404, feeds, cart/checkout/
- * account pages, posts set to noindex in Rank Math, and any language whose translation is not published.
+ * account pages, posts set to noindex in Rank Math, any language whose translation is not published, and (`product_cat`
+ * archives) any language whose category twin is not indexable (no products in itself or descendants, or manual noindex).
  * `<html lang>` is untouched (`uk` / `ru-RU`).
  *
  * @package Vextra\Core
@@ -17,6 +18,7 @@ namespace Vextra\Core\Multilang;
 
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Seo\TermCounts;
 
 final class Hreflang {
 
@@ -39,9 +41,17 @@ final class Hreflang {
 	 */
 	private RankMath $rank_math;
 
-	public function __construct( Polylang $polylang, RankMath $rank_math ) {
+	/**
+	 * Hierarchical category counts.
+	 *
+	 * @var TermCounts
+	 */
+	private TermCounts $counts;
+
+	public function __construct( Polylang $polylang, RankMath $rank_math, TermCounts $counts ) {
 		$this->polylang  = $polylang;
 		$this->rank_math = $rank_math;
+		$this->counts    = $counts;
 	}
 
 	public function register(): void {
@@ -115,15 +125,27 @@ final class Hreflang {
 		if ( is_singular() ) {
 			return $this->rank_math->is_post_noindex( (int) get_queried_object_id() );
 		}
+		if ( is_tax( TermCounts::TAXONOMY ) ) {
+			return ! $this->counts->is_indexable( (int) get_queried_object_id() );
+		}
 		return false;
 	}
 
 	/**
-	 * For singular views: languages whose translation is published (null = not a singular view, no restriction).
+	 * For singular views: languages whose translation is published; for product categories: languages whose twin is indexable (null = no restriction).
 	 *
 	 * @return string[]|null
 	 */
 	private function published_languages(): ?array {
+		if ( is_tax( TermCounts::TAXONOMY ) ) {
+			$out = [];
+			foreach ( $this->polylang->term_translations( (int) get_queried_object_id() ) as $lang => $id ) {
+				if ( $this->counts->is_indexable( $id ) ) {
+					$out[] = (string) $lang;
+				}
+			}
+			return $out;
+		}
 		if ( ! is_singular() ) {
 			return null;
 		}

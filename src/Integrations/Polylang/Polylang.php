@@ -139,6 +139,44 @@ final class Polylang extends AbstractIntegration {
 	}
 
 	/**
+	 * Language slug of a term, '' when none.
+	 *
+	 * @param int $term_id Term ID.
+	 */
+	public function term_language( int $term_id ): string {
+		if ( ! $this->is_ready() || $term_id <= 0 || ! function_exists( 'pll_get_term_language' ) ) {
+			return '';
+		}
+		$lang = pll_get_term_language( $term_id );
+		return is_string( $lang ) ? $lang : '';
+	}
+
+	/**
+	 * Translation group of a term: language slug => term ID (includes the term itself).
+	 *
+	 * @param int $term_id Term ID.
+	 * @return array<string,int>
+	 */
+	public function term_translations( int $term_id ): array {
+		if ( ! $this->is_ready() || $term_id <= 0 || ! function_exists( 'pll_get_term_translations' ) ) {
+			return [];
+		}
+		return array_map( 'intval', (array) pll_get_term_translations( $term_id ) );
+	}
+
+	/**
+	 * Home URL of a language WITH trailing slash (`/`, `/ru/`), '' when unknown.
+	 *
+	 * @param string $lang Language slug.
+	 */
+	public function home_url( string $lang ): string {
+		if ( ! $this->is_ready() || '' === $lang || ! function_exists( 'pll_home_url' ) ) {
+			return '';
+		}
+		return trailingslashit( (string) pll_home_url( $lang ) );
+	}
+
+	/**
 	 * Set the language of a post.
 	 *
 	 * @param int    $post_id Post ID.
