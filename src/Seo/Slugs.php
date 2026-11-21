@@ -63,11 +63,12 @@ final class Slugs {
 
 	public function register(): void {
 		add_filter( 'wp_insert_term_data', [ $this, 'term_data' ], 20, 3 );
+		add_filter( 'wp_update_term_data', [ $this, 'term_update_data' ], 20, 4 );
 		add_filter( 'wp_insert_post_data', [ $this, 'post_data' ], 20, 4 );
 	}
 
 	/**
-	 * `wp_insert_term_data`: runs for new terms only (updates use `wp_update_term_data`, never hooked).
+	 * `wp_insert_term_data`: new terms.
 	 *
 	 * @param mixed $data     Term data (`name`, `slug`, `term_group`).
 	 * @param mixed $taxonomy Taxonomy.
@@ -75,10 +76,42 @@ final class Slugs {
 	 * @return mixed
 	 */
 	public function term_data( $data, $taxonomy = '', $args = [] ) {
-		if ( ! is_array( $data ) || ! is_string( $taxonomy ) || ! $this->handles_taxonomy( $taxonomy ) ) {
+		return $this->fix_term( $data, $taxonomy, is_array( $args ) ? $args : [], 0 );
+	}
+
+	/**
+	 * `wp_update_term_data`: an EXISTING term whose slug is being changed to a Cyrillic value is transliterated; a term whose
+	 * submitted slug equals the stored one (title edits, quick saves, imports) is never touched.
+	 *
+	 * @param mixed $data     Term data (`name`, `slug`, `term_group`).
+	 * @param mixed $term_id  Term ID.
+	 * @param mixed $taxonomy Taxonomy.
+	 * @param mixed $args     Arguments passed to wp_update_term().
+	 * @return mixed
+	 */
+	public function term_update_data( $data, $term_id = 0, $taxonomy = '', $args = [] ) {
+		$term_id = (int) $term_id;
+		$term    = $term_id > 0 && is_string( $taxonomy ) ? get_term( $term_id, $taxonomy ) : null;
+		if ( ! is_array( $data ) || ! $term instanceof \WP_Term || (string) ( $data['slug'] ?? '' ) === $term->slug ) {
 			return $data;
 		}
 		$args = is_array( $args ) ? $args : [];
+		return $this->fix_term( $data, $taxonomy, $args + [ 'parent' => (int) $term->parent ], $term_id );
+	}
+
+	/**
+	 * Shared term logic.
+	 *
+	 * @param mixed               $data     Term data.
+	 * @param mixed               $taxonomy Taxonomy.
+	 * @param array<string,mixed> $args     Insert/update arguments.
+	 * @param int                 $term_id  Existing term ID (0 on insert).
+	 * @return mixed
+	 */
+	private function fix_term( $data, $taxonomy, array $args, int $term_id ) {
+		if ( ! is_array( $data ) || ! is_string( $taxonomy ) || ! $this->handles_taxonomy( $taxonomy ) ) {
+			return $data;
+		}
 
 		$slug = (string) ( $data['slug'] ?? '' );
 		$name = (string) ( $data['name'] ?? '' );
@@ -87,13 +120,19 @@ final class Slugs {
 			return $data;
 		}
 
-		$lang   = $this->language( 'term', $text, $args );
+		$lang   = $this->language( 'term', $text, $args, $term_id );
 		$result = $this->translit->transliterate( $text, $lang );
 		if ( '' === $result ) {
 			return $data;
 		}
 
-		$unique = wp_unique_term_slug( $result, (object) $args );
+		$unique = wp_unique_term_slug(
+			$result,
+			(object) ( $args + [
+				'taxonomy' => $taxonomy,
+				'term_id'  => $term_id,
+			] )
+		);
 		if ( $unique !== $result ) {
 			Log::warning(
 				'Term slug got a uniqueness suffix, review it before indexation.',
@@ -108,7 +147,6 @@ final class Slugs {
 		$data['slug'] = $unique;
 		return $data;
 	}
-
 	/**
 	 * `wp_insert_post_data`.
 	 *
@@ -133,8 +171,12 @@ final class Slugs {
 		}
 
 		$post_id = (int) ( $postarr['ID'] ?? 0 );
-		$lang    = $this->language( 'post', $text, $postarr, $post_id );
-		$result  = $this->translit->transliterate( $text, $lang );
+		$stored  = $post_id > 0 ? (string) get_post_field( 'post_name', $post_id, 'raw' ) : '';
+		if ( '' !== $stored && rawurldecode( $stored ) === rawurldecode( (string) ( $data['post_name'] ?? '' ) ) ) {
+			return $data; // The slug itself is not being changed: never touch an existing slug.
+		}
+		$lang   = $this->language( 'post', $text, $postarr, $post_id );
+		$result = $this->translit->transliterate( $text, $lang );
 		if ( '' === $result ) {
 			return $data;
 		}
@@ -207,9 +249,9 @@ final class Slugs {
 	 * @param string              $kind    `term` or `post`.
 	 * @param string              $text    Source text.
 	 * @param array<string,mixed> $args    Insert arguments.
-	 * @param int                 $post_id Post ID (posts only).
+	 * @param int                 $object_id Post or term ID of an existing object (0 on insert).
 	 */
-	private function language( string $kind, string $text, array $args, int $post_id = 0 ): string {
+	private function language( string $kind, string $text, array $args, int $object_id = 0 ): string {
 		$known = $this->polylang->is_ready() ? $this->polylang->languages() : [];
 
 		$explicit = '';
@@ -220,7 +262,7 @@ final class Slugs {
 		 * @param string              $kind    `term` or `post`.
 		 * @param array<string,mixed> $context Insert arguments (+ `ID` for posts).
 		 */
-		$filtered = apply_filters( 'vextra/seo/slug_language', '', $kind, $args + [ 'ID' => $post_id ] );
+		$filtered = apply_filters( 'vextra/seo/slug_language', '', $kind, $args + [ 'ID' => $object_id ] );
 		if ( is_string( $filtered ) && '' !== $filtered ) {
 			$explicit = sanitize_key( $filtered );
 		}
@@ -229,7 +271,7 @@ final class Slugs {
 			$explicit,
 			isset( $args['lang'] ) && is_string( $args['lang'] ) ? sanitize_key( $args['lang'] ) : '',
 			'term' === $kind ? $this->request_language( [ 'term_lang_choice', 'inline_lang_choice' ] ) : $this->request_language( [ 'post_lang_choice' ] ),
-			$post_id > 0 ? $this->polylang->post_language( $post_id ) : '',
+			$object_id > 0 ? ( 'term' === $kind ? $this->polylang->term_language( $object_id ) : $this->polylang->post_language( $object_id ) ) : '',
 		];
 		foreach ( $candidates as $candidate ) {
 			if ( '' !== $candidate && ( [] === $known || in_array( $candidate, $known, true ) ) ) {

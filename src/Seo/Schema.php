@@ -38,7 +38,18 @@ final class Schema {
 	 * @return mixed
 	 */
 	public function home_graph( $graph ) {
-		if ( ! is_array( $graph ) || ! is_front_page() ) {
+		if ( ! is_array( $graph ) ) {
+			return $graph;
+		}
+
+		// WebSite.url of every language ends with a slash (`/ru/`), like the canonical (Rank Math prints `/ru`).
+		foreach ( $graph as $key => $node ) {
+			if ( is_array( $node ) && in_array( 'WebSite', (array) ( $node['@type'] ?? [] ), true ) && ! empty( $node['url'] ) && is_string( $node['url'] ) ) {
+				$graph[ $key ]['url'] = trailingslashit( $node['url'] );
+			}
+		}
+
+		if ( ! is_front_page() ) {
 			return $graph;
 		}
 		foreach ( $graph as $key => $node ) {
