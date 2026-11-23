@@ -262,7 +262,7 @@ final class OwnerBotRole {
 				}
 			}
 		}
-		update_option( self::OPTION, self::VERSION, false );
+		update_option( self::OPTION, self::VERSION, true ); // Autoloaded: read on every request (TASK-010).
 	}
 
 	/**
