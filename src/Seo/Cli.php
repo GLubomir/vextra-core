@@ -1,7 +1,8 @@
 <?php
 /**
  * WP-CLI: `wp vextra seo status` (read-only), `wp vextra seo recount` (idempotent), `wp vextra seo transliterate` (pure) and
- * `wp vextra seo redirects` (read-only list of the redirects written by TermRedirects). CLI only, no web entry point.
+ * `wp vextra seo redirects` (read-only list of the redirects written by TermRedirects) and `wp vextra seo apply-config` (idempotent: the
+ * three Rank Math redirect settings of ADR-011). CLI only, no web entry point.
  *
  * @package Vextra\Core
  */
@@ -10,6 +11,7 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Compat\Conflicts;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
 
@@ -101,6 +103,13 @@ final class Cli {
 			]
 		);
 		\WP_CLI::add_command(
+			'vextra seo apply-config',
+			[ $this, 'apply_config' ],
+			[
+				'shortdesc' => 'Idempotent: Rank Math Auto Post Redirect ON, attachment redirect ON, attachment fallback = site home. Writes only these three keys.',
+			]
+		);
+		\WP_CLI::add_command(
 			'vextra seo redirects',
 			[ $this, 'redirects' ],
 			[
@@ -126,6 +135,35 @@ final class Cli {
 		$lang = isset( $assoc['lang'] ) ? sanitize_key( $assoc['lang'] ) : 'uk';
 		$max  = isset( $assoc['max'] ) ? max( 1, (int) $assoc['max'] ) : Transliterator::DEFAULT_MAX;
 		\WP_CLI::line( $this->translit->transliterate( (string) ( $args[0] ?? '' ), $lang, $max ) );
+	}
+
+	/**
+	 * Command: apply-config. Exits non-zero when the Redirections module is off or the option cannot be written.
+	 *
+	 * @param array<int,string>    $args  Positional args (unused).
+	 * @param array<string,string> $assoc Assoc args (unused).
+	 */
+	public function apply_config( array $args, array $assoc ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		if ( ! $this->rank_math->redirections_available() ) {
+			\WP_CLI::error( 'Rank Math or its Redirections module is not active: nothing applied.' );
+		}
+		$home   = home_url( '/' );
+		$values = [
+			'redirections_post_redirect' => 'on',
+			'attachment_redirect_urls'   => 'on',
+		];
+		// A fallback that already equals the home (scheme / trailing slash aside) is left as it is.
+		if ( ! Conflicts::same_home( $this->rank_math->stored_general_setting( 'attachment_redirect_default' ), $home ) ) {
+			$values['attachment_redirect_default'] = $home;
+		}
+		$changed = $this->rank_math->write_general_settings( $values );
+		if ( null === $changed ) {
+			\WP_CLI::error( 'Could not write rank-math-options-general; set the three settings by hand (docs/system/modules/seo.md).' );
+		}
+		foreach ( [ 'redirections_post_redirect', 'attachment_redirect_urls', 'attachment_redirect_default' ] as $key ) {
+			\WP_CLI::log( sprintf( '%s = %s%s', $key, $this->rank_math->stored_general_setting( $key ), in_array( $key, $changed, true ) ? ' (changed)' : '' ) );
+		}
+		\WP_CLI::success( [] === $changed ? 'Already applied, nothing changed.' : sprintf( 'Applied %d setting(s).', count( $changed ) ) );
 	}
 
 	/**

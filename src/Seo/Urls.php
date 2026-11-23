@@ -1,6 +1,6 @@
 <?php
 /**
- * Urls module: slug hygiene that does not depend on Rank Math (latin transliterated slugs for NEW content).
+ * Urls module: slug and file-name hygiene that does not depend on Rank Math (latin transliterated slugs and upload file names for NEW content).
  *
  * Separate from the `Seo` module on purpose: it must keep working when Polylang, Rank Math or WooCommerce is missing
  * (the default UA table is used when no language is known). Feature flag filter `vextra/core/seo/slugs_enabled`.
@@ -33,7 +33,12 @@ final class Urls implements ModuleInterface {
 
 	public function register(): void {
 		$pll = Plugin::instance()->integration( 'polylang' );
-		if ( ! $pll instanceof Polylang ) {
+		$pll = $pll instanceof Polylang ? $pll : null;
+
+		// File names do not depend on Polylang (default language `uk` when it is missing).
+		( new FileNames( new Transliterator(), $pll ) )->register();
+
+		if ( null === $pll ) {
 			return;
 		}
 		( new Slugs( $pll, new Transliterator() ) )->register();

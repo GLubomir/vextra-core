@@ -18,6 +18,12 @@ use Vextra\Core\Integrations\AbstractIntegration;
 
 final class RankMath extends AbstractIntegration {
 
+	/**
+	 * Rank Math general options option name and the only keys this plugin may write (TASK-036 `apply-config`).
+	 */
+	public const GENERAL_OPTION   = 'rank-math-options-general';
+	public const WRITABLE_GENERAL = [ 'redirections_post_redirect', 'attachment_redirect_urls', 'attachment_redirect_default' ];
+
 	public function id(): string {
 		return 'rankmath';
 	}
@@ -410,6 +416,105 @@ final class RankMath extends AbstractIntegration {
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Rows whose sources or destination contain the needle (LIKE search, bounded to 200, trashed ones excluded). Callers compare
+	 * exactly afterwards.
+	 *
+	 * @param string $needle Search string.
+	 * @return array<int,array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}>
+	 */
+	public function find_redirects_matching( string $needle ): array {
+		return $this->search_redirects( $needle );
+	}
+
+	/**
+	 * Remove ONE source (pattern + comparison) from a redirect. The row is deleted when it has no other source.
+	 *
+	 * @param int    $id         Redirect id.
+	 * @param string $pattern    Source pattern.
+	 * @param string $comparison `exact` or `regex`.
+	 * @return string `deleted`, `updated` or `none` (source not found / failure).
+	 */
+	public function remove_source( int $id, string $pattern, string $comparison = 'exact' ): string {
+		$row     = $this->get_redirect( $id );
+		$pattern = $this->clean_pattern( $pattern, $comparison );
+		if ( null === $row || '' === $pattern ) {
+			return 'none';
+		}
+		$keep  = [];
+		$found = false;
+		foreach ( $row['sources'] as $src ) {
+			if ( ( $src['comparison'] ?? 'exact' ) === $comparison && trim( (string) ( $src['pattern'] ?? '' ), '/' ) === $pattern ) {
+				$found = true;
+				continue;
+			}
+			$keep[] = $src;
+		}
+		if ( ! $found ) {
+			return 'none';
+		}
+		if ( [] === $keep ) {
+			return $this->delete_redirect( $id ) ? 'deleted' : 'none';
+		}
+		try {
+			\RankMath\Redirections\DB::update(
+				[
+					'id'          => $id,
+					'sources'     => $keep,
+					'url_to'      => $row['url_to'],
+					'header_code' => (string) $row['header_code'],
+					'status'      => 'active',
+				]
+			);
+		} catch ( \Throwable $e ) {
+			return 'none';
+		}
+		return 'updated';
+	}
+
+	/**
+	 * Write values of `rank-math-options-general` for an explicit whitelist of keys, keeping every other key untouched.
+	 * INTERNAL (docs/compat/integrations.md): Rank Math has no public setter; the option is its own documented storage and the
+	 * caller verifies the result through the compat rules (drift is reported, never silent).
+	 *
+	 * @param array<string,string> $values Key => value (only keys in WRITABLE_GENERAL are accepted).
+	 * @return string[]|null Keys that changed, null when the write is impossible.
+	 */
+	public function write_general_settings( array $values ): ?array {
+		if ( ! $this->is_available() ) {
+			return null;
+		}
+		$values  = array_intersect_key( $values, array_flip( self::WRITABLE_GENERAL ) );
+		$current = get_option( self::GENERAL_OPTION, [] );
+		$current = is_array( $current ) ? $current : [];
+		$changed = [];
+		foreach ( $values as $key => $value ) {
+			$value = (string) $value;
+			if ( ! isset( $current[ $key ] ) || (string) $current[ $key ] !== $value ) {
+				$current[ $key ] = $value;
+				$changed[]       = $key;
+			}
+		}
+		if ( [] === $changed ) {
+			return [];
+		}
+		if ( ! update_option( self::GENERAL_OPTION, $current ) ) {
+			return null;
+		}
+		return $changed;
+	}
+
+	/**
+	 * Stored value of one general setting straight from the option (the Helper API caches per request, so a value changed by
+	 * `write_general_settings()` in the same request is only visible here).
+	 *
+	 * @param string $key Option key.
+	 */
+	public function stored_general_setting( string $key ): string {
+		$current = get_option( self::GENERAL_OPTION, [] );
+		return is_array( $current ) && isset( $current[ $key ] ) && is_scalar( $current[ $key ] ) ? (string) $current[ $key ] : '';
 	}
 
 	/**
