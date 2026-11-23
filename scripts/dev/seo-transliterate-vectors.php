@@ -1,4 +1,7 @@
 <?php
+if ( 'cli' !== PHP_SAPI ) {
+	exit( 1 ); // Local-only dev script: command line only, never over HTTP.
+}
 /**
  * Local check of the transliteration vectors of TASK-009e (AC1-AC3 + RU registry). Pure PHP, no WordPress needed:
  * `php scripts/dev/seo-transliterate-vectors.php` (exit 1 on a mismatch). Dev only, excluded from deploy archives.
