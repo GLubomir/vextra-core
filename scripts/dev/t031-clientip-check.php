@@ -1,6 +1,6 @@
 <?php
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'local' !== wp_get_environment_type() ) {
-	exit( 1 ); // Local-only dev script (WP-CLI + local env).
+if ( 'cli' !== PHP_SAPI ) {
+	exit( 1 ); // Local-only dev script: command line only, never over HTTP.
 }
 // Local-only: prints deterministic ClientIp outputs (diff before/after TASK-031). Run: wp eval-file.
 require_once dirname( __DIR__, 2 ) . '/src/Guard/ClientIp.php';
