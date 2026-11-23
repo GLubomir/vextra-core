@@ -14,8 +14,8 @@
  *   lock would only be a DoS vector). Keys not set (degraded mode): reaching `login_user_global_limit` locks the username for
  *   unknown IPs only; an IP that already signed in as that user (user meta `_vx_login_known_ips`, last N HMAC-hashed /64-masked
  *   IPs) passes. The per-IP lock applies to everyone.
- * - SEC-047: the owner bot is exempt from the per-user counters and locks ONLY on the REST / app-password path; interactive
- *   attempts for its name are counted and locked like any other name (it is not distinguishable).
+ * - SEC-047 / SEC-051: the owner bot has NO exemption: interactive and REST attempts for its name are counted and locked like
+ *   any other name (it is not distinguishable); the pair keys keep anonymous failures away from its own address.
  * - A successful login resets that pair's counter and the username counter (never the IP counter).
  * Reading lock state can fail open (Failsafe); a lock that was read is always enforced.
  *
@@ -186,15 +186,14 @@ final class LoginThrottle {
 		}
 		if ( Config::get( 'login_user_limit' ) > 0 && '' !== trim( $username ) ) {
 			$user = Store::find_user( $username );
-			// SEC-043 / SEC-047: on the REST path the owner bot has no per-user lock (anonymous failures must never lock its
-			// Application Password out); interactive attempts for its name are locked like any other name.
-			if ( ! ( $this->is_api_request() && OwnerBotRole::is_bot( $user ) ) ) {
-				$ident  = null !== $user ? 'u' . $user->ID : Store::identity( $username );
-				$retry  = max( $retry, Store::lock_remaining( 'pair', Store::pair( $ident ) ) );
-				$global = ! $this->keys_on() && ! $this->is_api_request() ? Store::lock_remaining( 'user', $ident ) : 0;
-				if ( $global > 0 && ! $this->is_known_ip( $user ) ) {
-					$retry = max( $retry, $global );
-				}
+			// SEC-043 / SEC-047 / SEC-051: no name is special (the owner bot answers like any other name, interactive and REST).
+			// Anonymous failures lock only the attacker's own (user, IP) pair, so the bot's Application Password keeps working
+			// from its own address; the username-wide lock never applies to the REST path.
+			$ident  = null !== $user ? 'u' . $user->ID : Store::identity( $username );
+			$retry  = max( $retry, Store::lock_remaining( 'pair', Store::pair( $ident ) ) );
+			$global = ! $this->keys_on() && ! $this->is_api_request() ? Store::lock_remaining( 'user', $ident ) : 0;
+			if ( $global > 0 && ! $this->is_known_ip( $user ) ) {
+				$retry = max( $retry, $global );
 			}
 		}
 		return $retry;
@@ -212,7 +211,7 @@ final class LoginThrottle {
 		}
 		$window = Config::get( 'login_window' );
 		$this->count( 'ip', 'sec_login_ip', ClientIp::get(), Config::get( 'login_ip_limit' ), $window );
-		if ( $ip_only || ( $this->is_api_request() && OwnerBotRole::is_bot( Store::find_user( $username ) ) ) ) {
+		if ( $ip_only ) {
 			return;
 		}
 		$ident = Store::identity( $username );
@@ -262,8 +261,7 @@ final class LoginThrottle {
 		if ( null === $user ) {
 			return false;
 		}
-		$known = get_user_meta( $user->ID, self::META_KNOWN_IPS, true );
-		return is_array( $known ) && in_array( ClientIp::hash( ClientIp::get() ), $known, true );
+		return Store::is_known_ip( $user );
 	}
 
 	/**

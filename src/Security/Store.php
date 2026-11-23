@@ -73,6 +73,19 @@ final class Store {
 	}
 
 	/**
+	 * Has this account signed in from the current client IP before (user meta `_vx_login_known_ips`, HMAC hashes).
+	 *
+	 * @param \WP_User|null $user Account.
+	 */
+	public static function is_known_ip( ?\WP_User $user ): bool {
+		if ( null === $user ) {
+			return false;
+		}
+		$known = get_user_meta( $user->ID, LoginThrottle::META_KNOWN_IPS, true );
+		return is_array( $known ) && in_array( ClientIp::hash( ClientIp::get() ), $known, true );
+	}
+
+	/**
 	 * Orphan every pair lock / counter of an existing account (unlock by login).
 	 *
 	 * @param string $ident Store::identity().

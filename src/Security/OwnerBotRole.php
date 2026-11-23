@@ -8,8 +8,8 @@
  *   gone or its caps drifted). Deactivation keeps the role.
  * - SEC-046: the bot cannot change its own password, e-mail or roles (REST `rest_request_before_callbacks` refuses the params, and
  *   `wp_pre_insert_user_data` keeps the stored hash / address for any other path). Rotation stays CLI-only.
- * - SEC-048: `map_meta_cap` denies edit / delete / publish of the Woo system pages (shop, cart, checkout, my account, terms),
- *   the front page and their Polylang twins; ordinary pages and products are unchanged.
+ * - SEC-048: `map_meta_cap` denies edit / delete / publish of the Woo system pages (shop, cart, checkout, my account, terms,
+ *   refund and returns), the privacy policy page, the front page and their Polylang twins; ordinary pages and products are unchanged.
  * - The bot never signs in interactively: wp-login / Woo login refuse it with the generic `vx_invalid_login` error at
  *   `authenticate` priority 1 and again at 999; it has no password reset. Only an Application Password over REST works.
  *
@@ -138,9 +138,15 @@ final class OwnerBotRole {
 	 * @return mixed
 	 */
 	public function refuse_self_credentials( $response, $handler = null, $request = null ) {
-		unset( $handler );
-		if ( null !== $response || ! $request instanceof \WP_REST_Request || ! in_array( $request->get_method(), [ 'POST', 'PUT', 'PATCH' ], true )
-			|| 1 !== preg_match( '#^/wp/v2/users/(me|\d+)/?$#', $request->get_route() ) || ! self::is_bot( wp_get_current_user() ) ) {
+		if ( null !== $response || ! $request instanceof \WP_REST_Request || ! in_array( $request->get_method(), [ 'POST', 'PUT', 'PATCH' ], true ) || ! self::is_bot( wp_get_current_user() ) ) {
+			return $response;
+		}
+		// SEC-050: REST routing is case-insensitive, so decide on the resolved handler (the users controller) and, as a second
+		// signal, on the normalised route (decoded, lower-cased, slashes collapsed).
+		$callback = is_array( $handler ) && isset( $handler['callback'] ) ? $handler['callback'] : null;
+		$route    = strtolower( (string) preg_replace( '#/+#', '/', rawurldecode( $request->get_route() ) ) );
+		$users    = ( is_array( $callback ) && isset( $callback[0] ) && $callback[0] instanceof \WP_REST_Users_Controller ) || 1 === preg_match( '#^/wp/v2/users/(me|\d+)/?$#', $route );
+		if ( ! $users ) {
 			return $response;
 		}
 		foreach ( self::SELF_PARAMS as $param ) {
@@ -183,11 +189,12 @@ final class OwnerBotRole {
 		}
 		$ids = [];
 		if ( function_exists( 'wc_get_page_id' ) ) {
-			foreach ( [ 'shop', 'cart', 'checkout', 'myaccount', 'terms' ] as $page ) {
+			foreach ( [ 'shop', 'cart', 'checkout', 'myaccount', 'terms', 'refund_returns' ] as $page ) {
 				$ids[] = (int) wc_get_page_id( $page );
 			}
 		}
 		$ids[] = (int) get_option( 'page_on_front' );
+		$ids[] = (int) get_option( 'wp_page_for_privacy_policy' );
 		$ids   = array_values( array_unique( array_filter( $ids, static fn( int $id ): bool => $id > 0 ) ) );
 		$pll   = Plugin::instance()->integration( 'polylang' );
 		$all   = $ids;

@@ -127,7 +127,7 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'hook', 'woocommerce_enqueue_styles', false, 'theme Woo/Assets', 'Woo styles load next to ours' ),
 			$e( 'woocommerce', 'function', 'wc_get_orders', false, 'core Guard DraftOrders', 'draft-order purge skipped' ),
 			$e( 'woocommerce', 'function', 'as_schedule_recurring_action', false, 'core Guard DraftOrders (Action Scheduler bundled with Woo)', 'draft-order purge not scheduled' ),
-			$e( 'woocommerce', 'function', 'as_has_scheduled_action', false, 'core Guard DraftOrders', 'draft-order purge not scheduled' ),
+			$e( 'woocommerce', 'function', 'as_has_scheduled_action', false, 'core Guard DraftOrders, Security LostPassword (pending reset job dedup)', 'draft-order purge not scheduled; duplicate reset jobs possible (bounded by the quotas)' ),
 			$e( 'woocommerce', 'function', 'as_unschedule_all_actions', false, 'core Guard DraftOrders (deactivation)', 'schedule stays until Woo is removed' ),
 			$e( 'woocommerce', 'function', 'as_enqueue_async_action', false, 'core Guard DraftOrders, Security LostPassword (reset mail job)', 'backlog drains one batch per day; reset mail sent synchronously, failure swallowed' ),
 			$e( 'woocommerce', 'function', 'as_schedule_single_action', false, 'core Security LostPassword (single retry of a failed reset mail)', 'no retry' ),

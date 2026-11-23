@@ -12,8 +12,10 @@
  * one retry after 5 minutes). Without Action Scheduler the mail is sent synchronously and a failure is swallowed.
  * Woo path (`/my-account/lost-password/`): Woo has no hook between "user not found" and its error notice, so `wp_loaded` priority 15
  * (before Woo's handler at 20) answers every request itself with Woo's own success redirect and queues job
- * `vextra/security/send_reset_mail_woo` (Woo's own mail template) for a known account. Without Action Scheduler a known account
- * falls through to Woo (sync, the failure is swallowed by Woo).
+ * `vextra/security/send_reset_mail_woo` (Woo's own mail template) for a known account, AFTER the form validators (Turnstile) ran, so
+ * an unverified request never spends a quota (SEC-052). Without Action Scheduler the same handler sends synchronously.
+ * A request for an account whose job is still pending queues nothing and does not count against the ceiling; IPs the account
+ * signed in from are exempt from the ceiling (SEC-053).
  * Buckets: per IP (`reset_ip_*`, 429 + Retry-After); per (account, IP) pair (`reset_user_limit`) and per account across all IPs
  * (`reset_user_global_limit`), both silently "no job, neutral page" (SEC-043: an attacker cannot burn the owner's quota).
  *
@@ -134,7 +136,7 @@ final class LostPassword {
 		}
 		$real  = $user_data instanceof \WP_User && (int) $user_data->ID > 0;
 		$ident = $real ? 'u' . (int) $user_data->ID : Store::identity( is_string( $user_login ) ? $user_login : '' );
-		$ok    = (bool) Failsafe::run( 'lostpassword-quota', fn(): bool => $this->quota( $ident ), true );
+		$ok    = (bool) Failsafe::run( 'lostpassword-quota', fn(): bool => $this->quota( $ident, $real ? $user_data : null ), true );
 		if ( $real && $ok && wp_is_password_reset_allowed_for_user( $user_data ) ) {
 			$id = (int) $user_data->ID;
 			Failsafe::run( 'lostpassword-queue', fn() => $this->dispatch( $id, self::JOB_CORE ) );
@@ -215,14 +217,8 @@ final class LostPassword {
 			$user = get_user_by( 'email', $login );
 		}
 
-		$ident = $user instanceof \WP_User ? 'u' . (int) $user->ID : Store::identity( $login );
-		$ok    = (bool) Failsafe::run( 'lostpassword-quota-woo', fn(): bool => $this->quota( $ident ), true );
-		$send  = $user instanceof \WP_User && $ok && wp_is_password_reset_allowed_for_user( $user );
-		if ( $send && ! function_exists( 'as_enqueue_async_action' ) ) {
-			return; // No queue: Woo sends the mail itself (synchronously; Woo ignores a failed send).
-		}
-
-		// Plugins that validate the form (captcha, 2FA) still run, like for a real account.
+		// Plugins that validate the form (captcha, Turnstile, 2FA) run FIRST, like on wp-login.php: a request that did not pass
+		// them must never spend a reset quota (SEC-052).
 		$errors = new \WP_Error();
 		do_action( 'lostpassword_post', $errors, $user instanceof \WP_User ? $user : false );
 		if ( $errors->get_error_code() ) {
@@ -231,6 +227,9 @@ final class LostPassword {
 			return;
 		}
 
+		$ident = $user instanceof \WP_User ? 'u' . (int) $user->ID : Store::identity( $login );
+		$ok    = (bool) Failsafe::run( 'lostpassword-quota-woo', fn(): bool => $this->quota( $ident, $user instanceof \WP_User ? $user : null ), true );
+		$send  = $user instanceof \WP_User && $ok && wp_is_password_reset_allowed_for_user( $user );
 		if ( $send && $user instanceof \WP_User ) {
 			$id = (int) $user->ID;
 			Failsafe::run( 'lostpassword-queue-woo', fn() => $this->dispatch( $id, self::JOB_WOO ) );
@@ -366,23 +365,45 @@ final class LostPassword {
 	}
 
 	/**
-	 * Count a request against the (account, IP) pair bucket and, while that allows it, the per-account ceiling. Identical work for
-	 * known and unknown logins (an unknown name is keyed by the hash of its text). False = no job (neutral page).
+	 * Is a reset mail job of this account already waiting (any template).
 	 *
-	 * @param string $ident Store::identity().
+	 * @param int $user_id Account (0 for an unknown login: same query, parity of the work).
 	 */
-	private function quota( string $ident ): bool {
+	private function pending( int $user_id ): bool {
+		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
+			return false;
+		}
+		foreach ( [ self::JOB_CORE, self::JOB_WOO ] as $hook ) {
+			if ( as_has_scheduled_action( $hook, [ $user_id ], self::GROUP ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Quotas of one request: (account, IP) pair bucket first, then the per-account ceiling. Identical work for known and unknown
+	 * logins (an unknown name is keyed by the hash of its text). False = no job (neutral page).
+	 * A job of the account that is still pending makes the request a no-op that does not count against the ceiling (SEC-053: a
+	 * second mail would only replace the first one's key); an IP the account already signed in from is exempt from the ceiling,
+	 * its pair quota still applies.
+	 *
+	 * @param string        $ident Store::identity().
+	 * @param \WP_User|null $user  Account (null = unknown login).
+	 */
+	private function quota( string $ident, ?\WP_User $user = null ): bool {
 		if ( '' === $ident ) {
 			return false;
 		}
-		$window = Config::get( 'reset_user_window' );
-		$ok     = RateLimiter::hit( 'sec_reset_pair', Store::subject( Store::pair( $ident ) ), Config::get( 'reset_user_limit' ), $window )['allowed'];
-		if ( $ok ) {
+		$window  = Config::get( 'reset_user_window' );
+		$ok      = RateLimiter::hit( 'sec_reset_pair', Store::subject( Store::pair( $ident ) ), Config::get( 'reset_user_limit' ), $window )['allowed'];
+		$pending = $this->pending( null !== $user ? (int) $user->ID : 0 );
+		if ( $ok && ! $pending && ! Store::is_known_ip( $user ) ) {
 			$ok = RateLimiter::hit( 'sec_reset_user', Store::subject( $ident ), Config::get( 'reset_user_global_limit' ), $window )['allowed'];
 		}
 		if ( ! $ok ) {
 			Responder::log( 'reset-suppressed', 'lostpassword', 'security' );
 		}
-		return $ok;
+		return $ok && ! $pending;
 	}
 }
