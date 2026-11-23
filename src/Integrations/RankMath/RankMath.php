@@ -419,6 +419,81 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * The whole redirect store in ONE read (trashed rows excluded), for in-memory indexing by callers that touch many rows
+	 * (TermRedirects, SEC-061). Bounded by `$limit`.
+	 *
+	 * @param int $limit Maximum rows.
+	 * @return array<int,array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int}> Keyed by id.
+	 */
+	public function all_redirects( int $limit = 20000 ): array {
+		if ( ! $this->redirections_available() ) {
+			return [];
+		}
+		try {
+			$res = \RankMath\Redirections\DB::get_redirections(
+				[
+					'limit'  => max( 1, $limit ),
+					'status' => 'any',
+				]
+			);
+		} catch ( \Throwable $e ) {
+			return [];
+		}
+		$out = [];
+		foreach ( (array) ( $res['redirections'] ?? [] ) as $row ) {
+			if ( is_array( $row ) && 'trashed' !== ( $row['status'] ?? '' ) ) {
+				$norm               = $this->normalise_redirect( $row );
+				$out[ $norm['id'] ] = $norm;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Write sources + destination of an existing row without re-reading it (same-host destination only).
+	 *
+	 * @param array{id:int,sources:array<int,array<string,string>>,url_to:string,header_code:int} $row Normalised row.
+	 */
+	public function write_redirect( array $row ): bool {
+		$destination = $this->clean_destination( $row['url_to'] );
+		if ( $row['id'] <= 0 || '' === $destination || [] === $row['sources'] || ! $this->redirections_available() ) {
+			return false;
+		}
+		try {
+			\RankMath\Redirections\DB::update(
+				[
+					'id'          => $row['id'],
+					'sources'     => array_values( $row['sources'] ),
+					'url_to'      => $destination,
+					'header_code' => (string) $row['header_code'],
+					'status'      => 'active',
+				]
+			);
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Delete several rows in one call.
+	 *
+	 * @param int[] $ids Redirect ids.
+	 */
+	public function delete_redirects( array $ids ): bool {
+		$ids = array_values( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) );
+		if ( [] === $ids || ! $this->redirections_available() ) {
+			return false;
+		}
+		try {
+			\RankMath\Redirections\DB::delete( $ids );
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
 	 * Rows whose sources or destination contain the needle (LIKE search, bounded to 200, trashed ones excluded). Callers compare
 	 * exactly afterwards.
 	 *

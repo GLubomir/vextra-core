@@ -14,6 +14,9 @@
  * - writes `old -> new` rows for the DESCENDANTS only, plus the `/page/N/` regex row of every changed URL including the edited
  *   term (Rank Math does not carry pagination). A source already present in the store (any owner) is never written twice;
  * - never writes for a no-op save; the subtree is capped (MAX_SUBTREE);
+ * - ONE read of the store per edit, everything is indexed in memory (SEC-061); above `VX_SEO_REDIRECT_SYNC_MAX` rows (default 100)
+ *   only the edited term is written at once and the descendants go to ONE Action Scheduler job per term (snapshot in option
+ *   `vx_seo_redirect_jobs`, a newer edit merges into the pending one, destinations are recomputed from the live links);
  * - runs only for users who may manage product terms, WP-CLI and cron (imports); never from anonymous requests;
  * - rows written here are remembered in option `vx_seo_redirect_ids` (not autoloaded); `wp vextra seo redirects` lists them.
  *   Rows written before TASK-036 (including the edited term's own exact rows) stay valid, no migration.
@@ -27,7 +30,9 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Plugin;
 use Vextra\Core\Support\Log;
 
 final class TermRedirects {
@@ -35,6 +40,14 @@ final class TermRedirects {
 	public const OPTION = 'vx_seo_redirect_ids';
 
 	private const MAX_SUBTREE = 500;
+
+	/**
+	 * Default synchronous row budget per edit, pending-job option, job hook and cap of remembered old URLs per term.
+	 */
+	private const SYNC_MAX = 100;
+	private const MAX_OLDS = 50;
+	public const JOBS      = 'vx_seo_redirect_jobs';
+	public const JOB_HOOK  = 'vextra/seo/term_redirects_job';
 
 	/**
 	 * Suffix of the regex row that carries pagination.
@@ -69,6 +82,7 @@ final class TermRedirects {
 	public function register(): void {
 		add_action( 'edit_terms', [ $this, 'capture' ], 5, 2 );
 		add_action( 'edited_' . TermCounts::TAXONOMY, [ $this, 'compare' ], 20, 1 );
+		add_action( self::JOB_HOOK, [ $this, 'run_job' ], 10, 1 );
 	}
 
 	/**
@@ -88,7 +102,8 @@ final class TermRedirects {
 	}
 
 	/**
-	 * After the update: flatten the store, then write descendant + pagination redirects for every URL that changed.
+	 * After the update: flatten the store, then write descendant + pagination redirects for every URL that changed. A big subtree
+	 * (descendants x languages x 2 rows > sync limit) only gets the edited term's part now; the rest is one deduplicated Action Scheduler job (SEC-061).
 	 *
 	 * @param mixed $term_id Term ID.
 	 */
@@ -101,13 +116,16 @@ final class TermRedirects {
 		unset( $this->before[ $term_id ] );
 
 		$after = $this->subtree_urls( $term_id );
-		$pairs = [];
+		$snap  = [];
 		foreach ( $before as $id => $old ) {
 			if ( isset( $after[ $id ] ) && untrailingslashit( $old ) !== untrailingslashit( $after[ $id ] ) ) {
-				$pairs[ $id ] = [ $old, $after[ $id ] ];
+				$snap[ $id ] = [
+					'olds' => [ $old ],
+					'new'  => $after[ $id ],
+				];
 			}
 		}
-		if ( [] === $pairs ) {
+		if ( [] === $snap ) {
 			return;
 		}
 
@@ -119,84 +137,242 @@ final class TermRedirects {
 			return;
 		}
 
-		$this->apply( $term_id, $pairs, array_values( $after ) );
+		$rest = array_diff_key( $snap, [ $term_id => true ] );
+		if ( count( $rest ) * self::language_count() * 2 > self::sync_max() && $this->can_defer() ) {
+			$this->process( $term_id, array_intersect_key( $snap, [ $term_id => true ] ) );
+			$this->defer( $term_id, $rest );
+		} else {
+			$this->process( $term_id, $snap );
+		}
 
 		$this->rank_math->invalidate_sitemap( TermCounts::TAXONOMY );
 	}
 
 	/**
-	 * Flatten + write the redirects of one move.
-	 *
-	 * @param int                                 $edited Edited term id (Rank Math owns its exact redirect).
-	 * @param array<int,array{0:string,1:string}> $pairs  Term id => [ old URL, new URL ].
-	 * @param string[]                            $live   Every live URL of the subtree after the change.
+	 * Row budget written synchronously before the rest of a subtree is deferred (constant `VX_SEO_REDIRECT_SYNC_MAX`, filter
+	 * `vextra/seo/redirect_sync_max`).
 	 */
-	private function apply( int $edited, array $pairs, array $live ): void {
-		$owned = $this->owned();
+	public static function sync_max(): int {
+		$max = defined( 'VX_SEO_REDIRECT_SYNC_MAX' ) ? (int) VX_SEO_REDIRECT_SYNC_MAX : self::SYNC_MAX;
+		/**
+		 * Filters the synchronous row budget of one category edit.
+		 *
+		 * @param int $max Rows (descendants x 2: term + pagination).
+		 */
+		return max( 0, (int) apply_filters( 'vextra/seo/redirect_sync_max', $max ) );
+	}
 
-		// 1. Chains: ANY row (Rank Math's or ours) that pointed to an old URL of the subtree now points to the new one.
-		foreach ( $pairs as [ $old, $new ] ) {
-			foreach ( [ $old, trailingslashit( $old ) . self::PAGE_SUFFIX ] as $target ) {
-				$to = $target === $old ? $new : trailingslashit( $new ) . self::PAGE_SUFFIX;
-				foreach ( $this->rank_math->find_redirects_to( $target ) as $row ) {
-					$this->rank_math->update_redirect_destination( $row['id'], $to );
+	/**
+	 * Number of site languages (every language may carry its own twin subtree), at least 1.
+	 */
+	private static function language_count(): int {
+		$pll = Plugin::instance()->integration( 'polylang' );
+		return $pll instanceof Polylang ? max( 1, count( $pll->languages() ) ) : 1;
+	}
+
+	/**
+	 * Action Scheduler is available.
+	 */
+	private function can_defer(): bool {
+		return function_exists( 'as_enqueue_async_action' ) && function_exists( 'as_has_scheduled_action' );
+	}
+
+	/**
+	 * Store the snapshot of the deferred part (merged with a pending one: every old URL of every term is kept, the destination is
+	 * recomputed from the live term link when the job runs) and enqueue ONE job per edited term.
+	 *
+	 * @param int                                        $term_id Edited term id.
+	 * @param array<int,array{olds:string[],new:string}> $snap    Deferred part.
+	 */
+	private function defer( int $term_id, array $snap ): void {
+		$jobs    = (array) get_option( self::JOBS, [] );
+		$pending = isset( $jobs[ $term_id ] ) && is_array( $jobs[ $term_id ] ) ? $jobs[ $term_id ] : [];
+		foreach ( $snap as $id => $entry ) {
+			$olds = array_merge( (array) ( $pending[ $id ]['olds'] ?? [] ), $entry['olds'] );
+			if ( count( $olds ) > self::MAX_OLDS ) {
+				Log::warning( 'Too many pending old URLs for one category, oldest dropped.', [ 'term' => $id ], 'seo' );
+				$olds = array_slice( $olds, -self::MAX_OLDS );
+			}
+			$pending[ $id ] = [
+				'olds' => array_values( array_unique( array_map( 'strval', $olds ) ) ),
+				'new'  => $entry['new'],
+			];
+		}
+		$jobs[ $term_id ] = $pending;
+		update_option( self::JOBS, $jobs, false );
+
+		if ( ! as_has_scheduled_action( self::JOB_HOOK, [ $term_id ], 'vextra-seo' ) ) {
+			as_enqueue_async_action( self::JOB_HOOK, [ $term_id ], 'vextra-seo' );
+		}
+	}
+
+	/**
+	 * Action Scheduler job: the deferred part of one edit. Idempotent (rows are only added when their source is absent, flatten
+	 * recomputes from the store); destinations are the live term links at run time.
+	 *
+	 * @param mixed $term_id Edited term id.
+	 */
+	public function run_job( $term_id ): void {
+		$term_id = (int) $term_id;
+		$jobs    = (array) get_option( self::JOBS, [] );
+		$read    = isset( $jobs[ $term_id ] ) && is_array( $jobs[ $term_id ] ) ? $jobs[ $term_id ] : [];
+		if ( [] === $read || ! $this->rank_math->redirections_available() ) {
+			return;
+		}
+
+		$snap = [];
+		foreach ( $read as $id => $entry ) {
+			$link = get_term_link( (int) $id, TermCounts::TAXONOMY );
+			if ( is_string( $link ) && '' !== $link ) {
+				$snap[ (int) $id ] = [
+					'olds' => (array) $entry['olds'],
+					'new'  => $link,
+				];
+			}
+		}
+		$this->process( $term_id, $snap );
+		$this->rank_math->invalidate_sitemap( TermCounts::TAXONOMY );
+
+		// A newer edit may have merged into the entry while this ran: keep it and make sure a job exists.
+		$jobs = (array) get_option( self::JOBS, [] );
+		if ( ( $jobs[ $term_id ] ?? null ) === $read ) {
+			unset( $jobs[ $term_id ] );
+			if ( [] === $jobs ) {
+				delete_option( self::JOBS );
+			} else {
+				update_option( self::JOBS, $jobs, false );
+			}
+		} elseif ( $this->can_defer() && ! as_has_scheduled_action( self::JOB_HOOK, [ $term_id ], 'vextra-seo' ) ) {
+			as_enqueue_async_action( self::JOB_HOOK, [ $term_id ], 'vextra-seo' );
+		}
+	}
+
+	/**
+	 * Flatten + write the redirects of one move with ONE read of the store (no query per URL): rows are indexed in memory by
+	 * destination and by source, then written back once per touched row.
+	 *
+	 * @param int                                        $edited Edited term id (Rank Math owns its exact redirect).
+	 * @param array<int,array{olds:string[],new:string}> $snap   Term id => old URLs + current URL.
+	 */
+	private function process( int $edited, array $snap ): void {
+		if ( [] === $snap ) {
+			return;
+		}
+		$rows    = $this->rank_math->all_redirects();
+		$by_dest = [];
+		$exact   = [];
+		$regex   = [];
+		foreach ( $rows as $rid => $row ) {
+			$by_dest[ untrailingslashit( $row['url_to'] ) ][ $rid ] = true;
+			foreach ( $row['sources'] as $src ) {
+				$pattern = (string) ( $src['pattern'] ?? '' );
+				if ( 'regex' === ( $src['comparison'] ?? 'exact' ) ) {
+					$regex[ $pattern ][ $rid ] = true;
+				} else {
+					$exact[ trim( $pattern, '/' ) ][ $rid ] = true;
 				}
 			}
 		}
+		$dirty   = [];
+		$deleted = [];
 
-		// 2. Loops: a live URL of the subtree is never a redirect source (the source is removed from the row, the row is deleted
-		// when it was the only one).
-		$live_paths = [];
-		foreach ( $live as $url ) {
-			$path = $this->path( $url );
-			if ( '' === $path ) {
-				continue;
-			}
-			$live_paths[ $path ] = true;
-			foreach ( [ [ $path, 'exact' ], [ $this->page_pattern( $path ), 'regex' ] ] as [ $source, $comparison ] ) {
-				foreach ( $this->rank_math->find_redirects_from( $source, $comparison ) as $row ) {
-					if ( 'deleted' === $this->rank_math->remove_source( $row['id'], $source, $comparison ) ) {
-						$owned = array_values( array_diff( $owned, [ $row['id'] ] ) );
+		// 1. Chains: ANY row (Rank Math's or ours) that pointed to an old URL of the subtree now points to the new URL.
+		foreach ( $snap as $entry ) {
+			$new = $entry['new'];
+			foreach ( $entry['olds'] as $old ) {
+				if ( untrailingslashit( $old ) === untrailingslashit( $new ) ) {
+					continue;
+				}
+				foreach ( [
+					[ $old, $new ],
+					[ trailingslashit( $old ) . self::PAGE_SUFFIX, trailingslashit( $new ) . self::PAGE_SUFFIX ],
+				] as [ $from, $to ] ) {
+					$key = untrailingslashit( $from );
+					foreach ( array_keys( $by_dest[ $key ] ?? [] ) as $rid ) {
+						$rows[ $rid ]['url_to'] = $to;
+						$dirty[ $rid ]          = true;
+						unset( $by_dest[ $key ][ $rid ] );
+						$by_dest[ untrailingslashit( $to ) ][ $rid ] = true;
 					}
 				}
 			}
 		}
 
-		// 3. New rows: descendants exact (the edited term is Rank Math's), every changed URL paginated.
-		foreach ( $pairs as $id => [ $old, $new ] ) {
-			$old_path = $this->path( $old );
-			if ( '' === $old_path || isset( $live_paths[ $old_path ] ) ) {
+		// 2. Loops: a live URL of the subtree is never a redirect source (the source leaves its row; the row goes when it was the
+		// only one).
+		$live_paths = [];
+		foreach ( $snap as $entry ) {
+			$path = $this->path( $entry['new'] );
+			if ( '' === $path ) {
 				continue;
 			}
-			if ( $id !== $edited ) {
-				$owned = $this->add_if_absent( $old_path, 'exact', $new, $owned );
+			$live_paths[ $path ] = true;
+			foreach ( [
+				[ $path, 'exact', $exact[ $path ] ?? [] ],
+				[ $this->page_pattern( $path ), 'regex', $regex[ $this->page_pattern( $path ) ] ?? [] ],
+			] as [ $source, $comparison, $ids ] ) {
+				foreach ( array_keys( $ids ) as $rid ) {
+					$kept = [];
+					foreach ( $rows[ $rid ]['sources'] as $src ) {
+						$same = ( $src['comparison'] ?? 'exact' ) === $comparison
+							&& ( 'exact' === $comparison ? trim( (string) ( $src['pattern'] ?? '' ), '/' ) : (string) ( $src['pattern'] ?? '' ) ) === $source;
+						if ( ! $same ) {
+							$kept[] = $src;
+						}
+					}
+					$rows[ $rid ]['sources'] = $kept;
+					$dirty[ $rid ]           = true;
+					if ( 'exact' === $comparison ) {
+						unset( $exact[ $source ][ $rid ] );
+					} else {
+						unset( $regex[ $source ][ $rid ] );
+					}
+					if ( [] === $kept ) {
+						$deleted[ $rid ] = true;
+					}
+				}
 			}
-			$owned = $this->add_if_absent( $this->page_pattern( $old_path ), 'regex', trailingslashit( $new ) . self::PAGE_SUFFIX, $owned );
 		}
 
+		// 3. New rows: descendants exact (the edited term is Rank Math's), every changed URL paginated; a source already in the
+		// store (any owner) is never written twice.
+		$adds = [];
+		foreach ( $snap as $id => $entry ) {
+			foreach ( $entry['olds'] as $old ) {
+				$old_path = $this->path( $old );
+				if ( '' === $old_path || isset( $live_paths[ $old_path ] ) ) {
+					continue;
+				}
+				if ( $id !== $edited && empty( $exact[ $old_path ] ) ) {
+					$adds[]                 = [ $old_path, 'exact', $entry['new'] ];
+					$exact[ $old_path ][-1] = true;
+				}
+				$pattern = $this->page_pattern( $old_path );
+				if ( '' !== $pattern && empty( $regex[ $pattern ] ) ) {
+					$adds[]                = [ $pattern, 'regex', trailingslashit( $entry['new'] ) . self::PAGE_SUFFIX ];
+					$regex[ $pattern ][-1] = true;
+				}
+			}
+		}
+
+		// 4. Write: one delete call, one update per touched row, one insert per new row.
+		$owned = $this->owned();
+		if ( [] !== $deleted ) {
+			$this->rank_math->delete_redirects( array_keys( $deleted ) );
+			$owned = array_values( array_diff( $owned, array_keys( $deleted ) ) );
+		}
+		foreach ( array_keys( array_diff_key( $dirty, $deleted ) ) as $rid ) {
+			$this->rank_math->write_redirect( $rows[ $rid ] );
+		}
+		foreach ( $adds as [ $source, $comparison, $dest ] ) {
+			$id = $this->rank_math->add_redirect( $source, $dest, 301, $comparison );
+			if ( $id > 0 ) {
+				$owned[] = $id;
+			} else {
+				Log::warning( 'Could not write a category redirect.', [ 'source' => $source ], 'seo' );
+			}
+		}
 		$this->save_owned( $owned );
-	}
-
-	/**
-	 * Create the redirect unless the source already exists in the store (any owner).
-	 *
-	 * @param string $source     Source pattern.
-	 * @param string $comparison `exact` or `regex`.
-	 * @param string $dest       Destination URL.
-	 * @param int[]  $owned      Ids written by this module.
-	 * @return int[] Updated id list.
-	 */
-	private function add_if_absent( string $source, string $comparison, string $dest, array $owned ): array {
-		if ( '' === $source || [] !== $this->rank_math->find_redirects_from( $source, $comparison ) ) {
-			return $owned;
-		}
-		$id = $this->rank_math->add_redirect( $source, $dest, 301, $comparison );
-		if ( $id > 0 ) {
-			$owned[] = $id;
-		} else {
-			Log::warning( 'Could not write a category redirect.', [ 'source' => $source ], 'seo' );
-		}
-		return $owned;
 	}
 
 	/**
@@ -235,6 +411,18 @@ final class TermRedirects {
 		$ids = is_wp_error( $ids ) ? [] : array_map( 'intval', $ids );
 		array_unshift( $ids, $term_id );
 		$ids = array_slice( array_unique( $ids ), 0, self::MAX_SUBTREE );
+
+		// Prime the term and relationship caches in bulk: one query instead of one per term (SEC-061).
+		get_terms(
+			[
+				'taxonomy'   => TermCounts::TAXONOMY,
+				'include'    => $ids,
+				'hide_empty' => false,
+				'fields'     => 'ids',
+				'lang'       => '',
+			]
+		);
+		update_object_term_cache( $ids, 'term' );
 
 		$out = [];
 		foreach ( $ids as $id ) {
