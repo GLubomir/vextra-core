@@ -23,6 +23,9 @@ use Vextra\Core\Plugin;
 
 final class Form {
 
+	public const NONCE_FIELD  = 'vx_review_nonce';
+	public const NONCE_ACTION = 'vx_review';
+
 	private const WOO_NOTICE = 'Only logged in customers who have purchased this product may leave a review.';
 
 	/**
@@ -119,6 +122,16 @@ final class Form {
 			$args['cancel_reply_link'] = '';
 			return $args;
 		}
+		if ( $user_id > 0 && $post_id > 0 && ! Policy::is_buyer( $user_id, $post_id ) ) {
+			// Woo counts processing orders and billing e-mails as "bought"; our rule is stricter (SEC-057): no form, same text as for any non-buyer.
+			$this->visible         = false;
+			$args['title_reply']   = esc_html__( 'Відгук можуть залишити лише покупці цього товару.', 'vextra-core' );
+			$args['comment_field'] = '';
+			$args['fields']        = [];
+			$args['submit_field']  = '';
+			$args['submit_button'] = '';
+			return $args;
+		}
 		$this->visible = $user_id > 0;
 		return $args;
 	}
@@ -163,13 +176,14 @@ final class Form {
 		if ( ! $this->visible || ! is_string( $submit ) || '' === $submit ) {
 			return $submit;
 		}
-		$ts = Plugin::instance()->integration( 'turnstile' );
+		$nonce = wp_nonce_field( self::NONCE_ACTION, self::NONCE_FIELD, false, false );
+		$ts    = Plugin::instance()->integration( 'turnstile' );
 		if ( ! $ts instanceof Turnstile || ! $ts->is_available() ) {
-			return $submit;
+			return $nonce . $submit;
 		}
 		ob_start();
 		$ts->render_widget( 'review' );
-		return (string) ob_get_clean() . $submit;
+		return (string) ob_get_clean() . $nonce . $submit;
 	}
 
 	/**

@@ -139,7 +139,6 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'function', 'wc_add_notice', false, 'core Security LostPassword (neutral Woo path)', 'validator error not shown' ),
 			$e( 'woocommerce', 'function', 'wc_get_account_endpoint_url', true, 'core Security LostPassword (neutral Woo path)', 'neutral Woo path unavailable' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_lost_password_confirmation_message', false, 'core Security LostPassword', 'Woo shows its own confirmation text' ),
-			$e( 'woocommerce', 'function', 'wc_customer_bought_product', true, 'core Reviews Policy (verified buyer)', 'nobody counts as a buyer: no review can be posted' ),
 			$e( 'woocommerce', 'option', 'woocommerce_enable_reviews', false, 'core Reviews Options (forced)', 'stock Woo review settings' ),
 			$e( 'woocommerce', 'option', 'woocommerce_enable_review_rating', false, 'core Reviews Options (forced)', 'stock Woo review settings' ),
 			$e( 'woocommerce', 'option', 'woocommerce_review_rating_required', false, 'core Reviews Options (forced)', 'stock Woo review settings' ),

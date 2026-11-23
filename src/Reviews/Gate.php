@@ -123,6 +123,12 @@ final class Gate {
 			$this->refuse( Policy::error( 'vx_review_closed', __( 'Відгуки до цього матеріалу закриті.', 'vextra-core' ), 403 ) );
 		}
 
+		$nonce = $this->posted_nonce();
+		if ( ! in_array( wp_verify_nonce( $nonce, Form::NONCE_ACTION ), [ 1, 2 ], true ) ) {
+			$this->refuse( Policy::error( 'vx_review_nonce', __( 'Форма застаріла. Оновіть сторінку й спробуйте ще раз.', 'vextra-core' ), 403 ) );
+		}
+		$data['comment_parent'] = 0;
+
 		$check = $data;
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- the rating is read to be validated, never stored from here; core has no nonce on this form (CSRF: signed-in only + SameSite cookies + Turnstile).
 		$check['rating'] = isset( $_POST['rating'] ) ? wp_unslash( $_POST['rating'] ) : ( $data['comment_meta']['rating'] ?? null ); // phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated strictly by Policy (^[1-5]$, non-strings refused).
@@ -156,6 +162,14 @@ final class Gate {
 		}
 		$user_id = is_array( $data ) ? (int) ( $data['user_id'] ?? 0 ) : 0;
 		return Policy::is_moderator( $user_id ) ? $approved : 0;
+	}
+
+	/**
+	 * Posted review-form nonce (string only).
+	 */
+	private function posted_nonce(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput -- this IS the nonce, verified right after; only a string is accepted.
+		return isset( $_POST[ Form::NONCE_FIELD ] ) && is_string( $_POST[ Form::NONCE_FIELD ] ) ? sanitize_text_field( wp_unslash( $_POST[ Form::NONCE_FIELD ] ) ) : '';
 	}
 
 	/**

@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-23T16:35:37+00:00\n"
+"POT-Creation-Date: 2026-11-23T17:34:13+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: vextra-core\n"
@@ -183,32 +183,36 @@ msgstr ""
 msgid "vextra-core потребує WordPress %s або новішої версії."
 msgstr ""
 
-#: src/Reviews/Form.php:71
-#: src/Reviews/Policy.php:85
+#: src/Reviews/Form.php:74
+#: src/Reviews/Policy.php:88
 msgid "Відгук можуть залишити лише покупці цього товару."
 msgstr ""
 
-#: src/Reviews/Form.php:73
-#: src/Reviews/Form.php:138
+#: src/Reviews/Form.php:76
+#: src/Reviews/Form.php:141
 msgid "Увійдіть, щоб залишити відгук"
 msgstr ""
 
-#: src/Reviews/Form.php:113
-#: src/Reviews/Policy.php:88
+#: src/Reviews/Form.php:116
+#: src/Reviews/Policy.php:91
 msgid "Ви вже залишили відгук на цей товар."
 msgstr ""
 
-#: src/Reviews/Gate.php:99
-#: src/Reviews/Policy.php:82
+#: src/Reviews/Gate.php:123
+#: src/Reviews/Policy.php:85
 msgid "Відгуки до цього матеріалу закриті."
 msgstr ""
 
-#: src/Reviews/Gate.php:156
+#: src/Reviews/Gate.php:128
+msgid "Форма застаріла. Оновіть сторінку й спробуйте ще раз."
+msgstr ""
+
+#: src/Reviews/Gate.php:194
 #: src/Security/TurnstileForms.php:206
 msgid "Підтвердіть, що ви не робот і спробуйте ще раз."
 msgstr ""
 
-#: src/Reviews/Gate.php:201
+#: src/Reviews/Gate.php:239
 msgid "Відгук не прийнято"
 msgstr ""
 
@@ -216,20 +220,20 @@ msgstr ""
 msgid "Оберіть оцінку від 1 до 5."
 msgstr ""
 
-#: src/Reviews/Policy.php:61
+#: src/Reviews/Policy.php:64
 msgid "Посилання у відгуках заборонені."
 msgstr ""
 
-#: src/Reviews/Policy.php:79
+#: src/Reviews/Policy.php:82
 msgid "Щоб залишити відгук, увійдіть в особистий кабінет."
 msgstr ""
 
-#: src/Reviews/Policy.php:156
+#: src/Reviews/Policy.php:187
 msgid "Покупець"
 msgstr ""
 
 #. translators: 1: minimum, 2: maximum number of characters.
-#: src/Reviews/Policy.php:174
+#: src/Reviews/Policy.php:205
 #, php-format
 msgid "Відгук має містити від %1$d до %2$d символів."
 msgstr ""
