@@ -47,6 +47,8 @@ final class Conflicts {
 		'reviews'   => [ 'site-reviews', 'customer-reviews-woocommerce', 'wpdiscuz', 'yith-woocommerce-advanced-reviews', 'wp-review' ],
 		// Slug / file-name transliteration plugins (vextra-core transliterates per object language). Slugs verified wordpress.org 2026-11.
 		'translit'  => [ 'cyr2lat', 'cyr3lat', 'cyr-and-lat', 'rustolat', 'cyrillic-to-latin', 'cyrlitera' ],
+		// Asset / cache optimisers that also dequeue, defer or combine scripts (the theme asset policy and the Performance module already do it). Free slugs from wordpress.org, premium folder names from their vendors.
+		'perf'      => [ 'autoptimize', 'perfmatters', 'wp-rocket', 'wp-asset-clean-up', 'wp-asset-clean-up-pro', 'litespeed-cache', 'wp-fastest-cache', 'w3-total-cache', 'wp-optimize', 'flying-press', 'fast-velocity-minify', 'nitropack', 'hummingbird-performance', 'sg-cachepress' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -222,6 +224,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Вимкніть капчу на формах входу в іншому плагіні або деактивуйте його: інакше на формі буде два віджети.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-perf-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін оптимізації скриптів / кешу поряд із політикою ресурсів vextra', 'vextra-core' ),
+				'module'   => 'performance',
+				'detector' => fn() => $this->module_active( 'performance' ) ? $this->detect_plugins( self::PLUGINS['perf'] ) : false,
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Тема і vextra-core вже відкладають jQuery, знімають зайві скрипти / стилі WooCommerce та WordPress і пропускають непотрібні блоки. Другий оптимізатор може подвоїти або зламати це: вимкніть у ньому відкладання / видалення скриптів, або вимкніть наш пункт (константа VX_PERF_DISABLED, фільтр vextra/assets/policy).', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[

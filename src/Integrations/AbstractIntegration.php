@@ -25,6 +25,15 @@ abstract class AbstractIntegration {
 	abstract public function version(): ?string;
 
 	/**
+	 * Options this plugin reads singly on every front request (Performance module primes them in one query). Default: none.
+	 *
+	 * @return string[]
+	 */
+	public function primed_options(): array {
+		return [];
+	}
+
+	/**
 	 * Guard: function_exists / class_exists / defined() checks only.
 	 */
 	abstract protected function detect(): bool;

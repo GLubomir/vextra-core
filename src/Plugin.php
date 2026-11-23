@@ -27,6 +27,8 @@ use Vextra\Core\Integrations\Turnstile\Turnstile;
 use Vextra\Core\Integrations\TwoFactor\TwoFactor;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
+use Vextra\Core\Performance\OptionPriming;
+use Vextra\Core\Performance\Performance;
 use Vextra\Core\Reviews\Reviews;
 use Vextra\Core\Security\Security;
 use Vextra\Core\Seo\Seo;
@@ -47,6 +49,7 @@ final class Plugin {
 		Guard::class,
 		Security::class,
 		Reviews::class,
+		Performance::class,
 	];
 
 	/**
@@ -120,6 +123,7 @@ final class Plugin {
 		add_action( 'init', [ self::$instance, 'load_textdomain' ] );
 		add_action( 'before_woocommerce_init', [ self::$instance, 'declare_woo_compatibility' ] );
 		add_action( 'plugins_loaded', [ self::$instance, 'register_modules' ], 20 );
+		OptionPriming::boot(); // Early (plugins_loaded 0): must run before Woo / Polylang / Rank Math initialise.
 	}
 
 	public static function instance(): Plugin {
