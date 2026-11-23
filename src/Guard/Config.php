@@ -35,6 +35,8 @@ final class Config {
 		'cartpost_limit'  => 20,    // POST add-to-cart (no-JS form), per IP.
 		'cartpost_window' => 60,
 		'per_page_cap'    => 20,    // Anonymous wp/v2 product listings.
+		'termedit_limit'  => 30,    // Owner-bot category edits (each rewrites redirect rows), per user.
+		'termedit_window' => 600,
 		'draft_age'       => 86400, // Seconds before a checkout-draft order is purged.
 		'draft_batch'     => 100,
 	];

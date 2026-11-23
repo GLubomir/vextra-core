@@ -44,6 +44,7 @@ final class Guard implements ModuleInterface {
 
 		( new AddToCart() )->register();
 		( new StoreApi() )->register();
+		( new TermEdits() )->register();
 		( new WcAjax() )->register();
 		( new Search() )->register();
 		( new UserAgents() )->register();

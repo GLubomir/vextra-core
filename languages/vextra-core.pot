@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-23T17:34:13+00:00\n"
+"POT-Creation-Date: 2026-11-23T18:27:51+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: vextra-core\n"
@@ -43,119 +43,135 @@ msgstr ""
 msgid "vextra-core: не знайдено vendor/autoload.php. Виконайте composer install у теці плагіна."
 msgstr ""
 
-#: src/Compat/Conflicts.php:117
-msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
+#: src/Compat/Conflicts.php:119
+msgid "Rank Math «Auto Post Redirect» вимкнено: редиректи змінених слагів не створюються"
 msgstr ""
 
-#: src/Compat/Conflicts.php:122
-msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
+#: src/Compat/Conflicts.php:124
+msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» має бути увімкнено (або `wp vextra seo apply-config`)."
 msgstr ""
 
-#: src/Compat/Conflicts.php:127
+#: src/Compat/Conflicts.php:129
+msgid "Редирект сторінок вкладень Rank Math вимкнено або веде не на головну сайту"
+msgstr ""
+
+#: src/Compat/Conflicts.php:134
+msgid "Rank Math → Загальні налаштування → Посилання → «Redirect Attachments» увімкнено, адреса за замовчуванням = головна сайту (або `wp vextra seo apply-config`)."
+msgstr ""
+
+#: src/Compat/Conflicts.php:139
+msgid "Активний плагін транслітерації: модуль seo-urls (слаги й імена файлів) вимкнено"
+msgstr ""
+
+#: src/Compat/Conflicts.php:144
+msgid "Транслітерацію веде vextra-core з таблицями UA/RU за мовою об’єкта. Деактивуйте плагін, модуль увімкнеться сам."
+msgstr ""
+
+#: src/Compat/Conflicts.php:149
 msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
 msgstr ""
 
-#: src/Compat/Conflicts.php:132
+#: src/Compat/Conflicts.php:154
 msgid "Деактивуйте плагін, що дублює Rank Math (title, schema, sitemap, редиректи)."
 msgstr ""
 
-#: src/Compat/Conflicts.php:137
+#: src/Compat/Conflicts.php:159
 msgid "Активний інший мультимовний плагін: модуль multilang вимкнено"
 msgstr ""
 
-#: src/Compat/Conflicts.php:142
+#: src/Compat/Conflicts.php:164
 msgid "Підтримуваний мультимовний плагін — Polylang. Деактивуйте конфліктний плагін, модуль увімкнеться сам."
 msgstr ""
 
-#: src/Compat/Conflicts.php:147
+#: src/Compat/Conflicts.php:169
 msgid "Активний плагін редиректів поруч із редиректами vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:152
+#: src/Compat/Conflicts.php:174
 msgid "Редиректи слагів і термінів веде vextra-core (через Rank Math). Перевірте, що правила не дублюються."
 msgstr ""
 
-#: src/Compat/Conflicts.php:157
+#: src/Compat/Conflicts.php:179
 msgid "Активний плагін списку бажань (власна функція планується)"
 msgstr ""
 
-#: src/Compat/Conflicts.php:162
+#: src/Compat/Conflicts.php:184
 msgid "Інформаційно: після появи власного списку бажань плагін доведеться вимкнути."
 msgstr ""
 
-#: src/Compat/Conflicts.php:167
+#: src/Compat/Conflicts.php:189
 msgid "Активний плагін безпеки з лімітами запитів поруч із модулем guard"
 msgstr ""
 
-#: src/Compat/Conflicts.php:172
+#: src/Compat/Conflicts.php:194
 msgid "Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403."
 msgstr ""
 
-#: src/Compat/Conflicts.php:177
+#: src/Compat/Conflicts.php:199
 msgid "Активний плагін захисту входу поряд із модулем security (ліміти спроб входу, XML-RPC, версії)"
 msgstr ""
 
-#: src/Compat/Conflicts.php:182
+#: src/Compat/Conflicts.php:204
 msgid "Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу."
 msgstr ""
 
-#: src/Compat/Conflicts.php:187
+#: src/Compat/Conflicts.php:209
 msgid "Активний другий плагін двофакторної автентифікації поряд із «Two Factor»"
 msgstr ""
 
-#: src/Compat/Conflicts.php:192
+#: src/Compat/Conflicts.php:214
 msgid "Залиште один плагін 2FA (підтримуваний: «Two Factor»): два плагіни борються за хуки authenticate / wp_login."
 msgstr ""
 
-#: src/Compat/Conflicts.php:197
+#: src/Compat/Conflicts.php:219
 msgid "Активний плагін капчі / Turnstile поряд із вбудованою перевіркою vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:202
+#: src/Compat/Conflicts.php:224
 msgid "Вимкніть капчу на формах входу в іншому плагіні або деактивуйте його: інакше на формі буде два віджети."
 msgstr ""
 
-#: src/Compat/Conflicts.php:207
+#: src/Compat/Conflicts.php:229
 msgid "Активний плагін відгуків / коментарів поряд із політикою відгуків vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:212
+#: src/Compat/Conflicts.php:234
 msgid "Політика відгуків (лише покупці, модерація, ліміти) діє попри плагін, але його форма й REST-маршрути можуть її обходити: деактивуйте плагін."
 msgstr ""
 
-#: src/Compat/Conflicts.php:217
+#: src/Compat/Conflicts.php:239
 msgid "Налаштування коментарів / відгуків не збігаються з політикою vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:222
+#: src/Compat/Conflicts.php:244
 msgid "Виконайте `wp vextra reviews reconcile` (значення в БД). Якщо розбіжність лишається, плагін фільтрує опцію через option_* / pre_option_*: вимкніть цей фільтр."
 msgstr ""
 
-#: src/Compat/Conflicts.php:227
+#: src/Compat/Conflicts.php:249
 msgid "ЗАПУСК ЗАБЛОКОВАНО: персонал без двофакторної автентифікації"
 msgstr ""
 
-#: src/Compat/Conflicts.php:232
+#: src/Compat/Conflicts.php:254
 msgid "Активуйте плагін «Two Factor» і налаштуйте TOTP + резервні коди кожному користувачу з правами керування (профіль → Two-Factor Options). Обов’язково до запуску."
 msgstr ""
 
-#: src/Compat/Conflicts.php:237
+#: src/Compat/Conflicts.php:259
 msgid "У Rank Math не вимкнено архіви авторів: логін автора може потрапити в індекс"
 msgstr ""
 
-#: src/Compat/Conflicts.php:242
+#: src/Compat/Conflicts.php:264
 msgid "Rank Math → Заголовки та мета → Автори → «Вимкнути архіви авторів» увімкнути."
 msgstr ""
 
-#: src/Compat/Conflicts.php:247
+#: src/Compat/Conflicts.php:269
 msgid "У Rank Math заповнено редактор robots.txt: він замінює базовий текст, у якому guard об’єднує свої правила"
 msgstr ""
 
-#: src/Compat/Conflicts.php:252
+#: src/Compat/Conflicts.php:274
 msgid "Залиште в редакторі рядок «Sitemap:» або очистіть редактор (Rank Math → Загальні налаштування → Редактор robots.txt)."
 msgstr ""
 
-#: src/Compat/Conflicts.php:441
+#: src/Compat/Conflicts.php:510
 msgid "плагін «Two Factor» не активний"
 msgstr ""
 
@@ -184,22 +200,23 @@ msgid "vextra-core потребує WordPress %s або новішої верс�
 msgstr ""
 
 #: src/Reviews/Form.php:74
-#: src/Reviews/Policy.php:88
+#: src/Reviews/Form.php:128
+#: src/Reviews/Policy.php:95
 msgid "Відгук можуть залишити лише покупці цього товару."
 msgstr ""
 
 #: src/Reviews/Form.php:76
-#: src/Reviews/Form.php:141
+#: src/Reviews/Form.php:151
 msgid "Увійдіть, щоб залишити відгук"
 msgstr ""
 
 #: src/Reviews/Form.php:116
-#: src/Reviews/Policy.php:91
+#: src/Reviews/Policy.php:98
 msgid "Ви вже залишили відгук на цей товар."
 msgstr ""
 
 #: src/Reviews/Gate.php:123
-#: src/Reviews/Policy.php:85
+#: src/Reviews/Policy.php:92
 msgid "Відгуки до цього матеріалу закриті."
 msgstr ""
 
@@ -220,20 +237,20 @@ msgstr ""
 msgid "Оберіть оцінку від 1 до 5."
 msgstr ""
 
-#: src/Reviews/Policy.php:64
+#: src/Reviews/Policy.php:71
 msgid "Посилання у відгуках заборонені."
 msgstr ""
 
-#: src/Reviews/Policy.php:82
+#: src/Reviews/Policy.php:89
 msgid "Щоб залишити відгук, увійдіть в особистий кабінет."
 msgstr ""
 
-#: src/Reviews/Policy.php:187
+#: src/Reviews/Policy.php:165
 msgid "Покупець"
 msgstr ""
 
 #. translators: 1: minimum, 2: maximum number of characters.
-#: src/Reviews/Policy.php:205
+#: src/Reviews/Policy.php:183
 #, php-format
 msgid "Відгук має містити від %1$d до %2$d символів."
 msgstr ""

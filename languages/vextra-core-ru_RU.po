@@ -58,14 +58,6 @@ msgid "Забагато запитів"
 msgstr "Слишком много запросов"
 
 #: src/Compat/Conflicts.php
-msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
-msgstr "В Rank Math включён «Auto Post Redirect», а редиректы слагов ведёт vextra-core"
-
-#: src/Compat/Conflicts.php
-msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
-msgstr "Rank Math → Общие настройки → Редиректы → «Auto Post Redirect» выключить."
-
-#: src/Compat/Conflicts.php
 msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
 msgstr "Активен второй SEO-плагин: поддерживается только Rank Math"
 
@@ -272,3 +264,27 @@ msgstr "Выполните `wp vextra reviews reconcile` (значения в Б
 #: src/Reviews/Gate.php
 msgid "Форма застаріла. Оновіть сторінку й спробуйте ще раз."
 msgstr "Форма устарела. Обновите страницу и попробуйте ещё раз."
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math «Auto Post Redirect» вимкнено: редиректи змінених слагів не створюються"
+msgstr "В Rank Math выключен «Auto Post Redirect»: редиректы изменённых слагов не создаются"
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» має бути увімкнено (або `wp vextra seo apply-config`)."
+msgstr "Rank Math → Общие настройки → Редиректы → «Auto Post Redirect» должен быть включён (или `wp vextra seo apply-config`)."
+
+#: src/Compat/Conflicts.php
+msgid "Редирект сторінок вкладень Rank Math вимкнено або веде не на головну сайту"
+msgstr "Редирект страниц вложений Rank Math выключен или ведёт не на главную сайта"
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math → Загальні налаштування → Посилання → «Redirect Attachments» увімкнено, адреса за замовчуванням = головна сайту (або `wp vextra seo apply-config`)."
+msgstr "Rank Math → Общие настройки → Ссылки → «Redirect Attachments» включено, адрес по умолчанию = главная сайта (или `wp vextra seo apply-config`)."
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін транслітерації: модуль seo-urls (слаги й імена файлів) вимкнено"
+msgstr "Активен плагин транслитерации: модуль seo-urls (слаги и имена файлов) выключен"
+
+#: src/Compat/Conflicts.php
+msgid "Транслітерацію веде vextra-core з таблицями UA/RU за мовою об’єкта. Деактивуйте плагін, модуль увімкнеться сам."
+msgstr "Транслитерацию ведёт vextra-core с таблицами UA/RU по языку объекта. Деактивируйте плагин, модуль включится сам."

@@ -45,6 +45,8 @@ final class Conflicts {
 		'twofactor' => [ 'wp-2fa', 'two-factor-authentication', 'miniorange-2-factor-authentication', 'google-authenticator', 'rublon' ],
 		// Review / comment plugins that would bring their own submit path next to the policy of the `reviews` module (Akismet is allowed, never a conflict). Slugs verified on wordpress.org (2026-11).
 		'reviews'   => [ 'site-reviews', 'customer-reviews-woocommerce', 'wpdiscuz', 'yith-woocommerce-advanced-reviews', 'wp-review' ],
+		// Slug / file-name transliteration plugins (vextra-core transliterates per object language). Slugs verified wordpress.org 2026-11.
+		'translit'  => [ 'cyr2lat', 'cyr3lat', 'cyr-and-lat', 'rustolat', 'cyrillic-to-latin', 'cyrlitera' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -114,13 +116,33 @@ final class Conflicts {
 		$rules = [
 			[
 				'id'       => 'rankmath-post-redirect',
-				'title'    => static fn(): string => __( 'Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core', 'vextra-core' ),
+				'title'    => static fn(): string => __( 'Rank Math «Auto Post Redirect» вимкнено: редиректи змінених слагів не створюються', 'vextra-core' ),
 				'module'   => 'seo',
 				'detector' => fn() => $this->detect_rankmath_post_redirect(),
 				'action'   => self::ACTION_WARN,
 				'blocking' => true,
-				'fix_hint' => static fn(): string => __( 'Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути.', 'vextra-core' ),
+				'fix_hint' => static fn(): string => __( 'Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» має бути увімкнено (або `wp vextra seo apply-config`).', 'vextra-core' ),
 				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
+				'id'       => 'rankmath-attachment-redirect',
+				'title'    => static fn(): string => __( 'Редирект сторінок вкладень Rank Math вимкнено або веде не на головну сайту', 'vextra-core' ),
+				'module'   => 'seo',
+				'detector' => fn() => $this->detect_rankmath_attachment_redirect(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Rank Math → Загальні налаштування → Посилання → «Redirect Attachments» увімкнено, адреса за замовчуванням = головна сайту (або `wp vextra seo apply-config`).', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
+				'id'       => 'duplicate-translit-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін транслітерації: модуль seo-urls (слаги й імена файлів) вимкнено', 'vextra-core' ),
+				'module'   => 'seo-urls',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['translit'] ),
+				'action'   => self::ACTION_YIELD,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Транслітерацію веде vextra-core з таблицями UA/RU за мовою об’єкта. Деактивуйте плагін, модуль увімкнеться сам.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
 				'id'       => 'duplicate-seo-plugin',
@@ -416,14 +438,61 @@ final class Conflicts {
 	}
 
 	/**
-	 * R1: Rank Math creates its own redirects on slug change while TermRedirects owns them.
+	 * R1 (ADR-011): Rank Math owns the redirect of an edited post/page/product/term; the setting must be ON.
 	 */
 	private function detect_rankmath_post_redirect(): bool {
 		$rank = Plugin::instance()->integration( 'rankmath' );
 		if ( ! $rank instanceof RankMath || ! $rank->is_available() || ! $this->module_active( 'seo' ) ) {
 			return false;
 		}
-		$value = $rank->setting( 'general.redirections_post_redirect', 'off' );
+		return ! $this->is_on( $rank->setting( 'general.redirections_post_redirect', 'off' ) );
+	}
+
+	/**
+	 * Attachment pages must 301 to the parent (setting ON) and orphans to the site home (never a copied local host).
+	 *
+	 * @return false|string The offending value.
+	 */
+	private function detect_rankmath_attachment_redirect() {
+		$rank = Plugin::instance()->integration( 'rankmath' );
+		if ( ! $rank instanceof RankMath || ! $rank->is_available() || ! $this->module_active( 'seo' ) ) {
+			return false;
+		}
+		if ( ! $this->is_on( $rank->setting( 'general.attachment_redirect_urls', 'off' ) ) ) {
+			return 'attachment_redirect_urls = off';
+		}
+		$default = $rank->setting( 'general.attachment_redirect_default', '' );
+		$default = is_string( $default ) ? trim( $default ) : '';
+		if ( ! self::same_home( $default, home_url( '/' ) ) ) {
+			return 'attachment_redirect_default = ' . ( '' === $default ? '(empty)' : $default );
+		}
+		return false;
+	}
+
+	/**
+	 * Same site home: scheme, host (case-insensitive) and trailing slash are ignored; a path must match.
+	 *
+	 * @param string $a URL.
+	 * @param string $b URL.
+	 */
+	public static function same_home( string $a, string $b ): bool {
+		$norm = static function ( string $url ): string {
+			$parts = wp_parse_url( trim( $url ) );
+			if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+				return '';
+			}
+			return strtolower( (string) $parts['host'] ) . ( isset( $parts['port'] ) ? ':' . $parts['port'] : '' ) . '/' . trim( (string) ( $parts['path'] ?? '' ), '/' );
+		};
+		$x    = $norm( $a );
+		return '' !== $x && $x === $norm( $b );
+	}
+
+	/**
+	 * Rank Math "on" value.
+	 *
+	 * @param mixed $value Setting value.
+	 */
+	private function is_on( $value ): bool {
 		return true === $value || in_array( (string) $value, [ 'on', '1', 'yes' ], true );
 	}
 
