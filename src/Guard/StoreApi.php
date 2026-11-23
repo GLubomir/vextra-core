@@ -29,6 +29,7 @@ final class StoreApi {
 	private const COUPON_ROUTE = '#^/wc/store(?:/v\d+)?/cart/(?:apply-coupon|coupons)(?:/|$)#i';
 	private const STORE_ROUTE  = '#^/wc/store(?:/|$)#i';
 	private const LISTING      = '#^/wp/v2/(?:product|product_cat|product_tag)(?:/|$)#i';
+	private const REVIEWS      = '#^/wc/store(?:/v\d+)?/products/reviews/?$#i';
 
 	public function register(): void {
 		add_filter( 'woocommerce_store_api_rate_limit_options', [ $this, 'limiter_options' ], 20 );
@@ -136,6 +137,12 @@ final class StoreApi {
 				return $this->error( 'rest_forbidden', 'Forbidden.', 403 );
 			}
 
+			if ( in_array( strtoupper( $request->get_method() ), [ 'GET', 'HEAD' ], true ) && 1 === preg_match( self::REVIEWS, $route ) ) {
+				// TASK-030: reviews stay public (same text is on the product page); capped and stripped of heavy params.
+				$this->limit_reviews_request( $request );
+				return null;
+			}
+
 			if ( $this->is_blocked( $route ) ) {
 				Responder::log( is_user_logged_in() ? '403' : '401', 'store-api-listing' );
 				return $this->error( 'rest_forbidden', 'Sorry, you are not allowed to do that.', is_user_logged_in() ? 403 : 401 );
@@ -175,6 +182,25 @@ final class StoreApi {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Anonymous Store API reviews listing: `per_page` capped (Config `per_page_cap`), no `_fields` games, `orderby` allow-listed.
+	 * Woo's limiter (configured above) counts the request.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	private function limit_reviews_request( \WP_REST_Request $request ): void {
+		$cap = Config::get( 'per_page_cap' );
+		$per = $request->get_param( 'per_page' );
+		if ( $cap > 0 && null !== $per && ( ! is_numeric( $per ) || (int) $per > $cap || (int) $per < 1 ) ) {
+			$request->set_param( 'per_page', $cap );
+		}
+		$request->set_param( '_fields', null );
+		$order = $request->get_param( 'orderby' );
+		if ( null !== $order && ! in_array( $order, [ 'date', 'date_gmt', 'id', 'rating', 'product' ], true ) ) {
+			$request->set_param( 'orderby', 'date_gmt' );
+		}
 	}
 
 	private function is_blocked( string $route ): bool {

@@ -27,6 +27,7 @@ use Vextra\Core\Integrations\Turnstile\Turnstile;
 use Vextra\Core\Integrations\TwoFactor\TwoFactor;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
+use Vextra\Core\Reviews\Reviews;
 use Vextra\Core\Security\Security;
 use Vextra\Core\Seo\Seo;
 use Vextra\Core\Seo\Urls;
@@ -45,6 +46,7 @@ final class Plugin {
 		Compat::class,
 		Guard::class,
 		Security::class,
+		Reviews::class,
 	];
 
 	/**

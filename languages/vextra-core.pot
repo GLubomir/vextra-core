@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-23T08:58:59+00:00\n"
+"POT-Creation-Date: 2026-11-23T17:34:13+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: vextra-core\n"
@@ -43,103 +43,119 @@ msgstr ""
 msgid "vextra-core: не знайдено vendor/autoload.php. Виконайте composer install у теці плагіна."
 msgstr ""
 
-#: src/Compat/Conflicts.php:114
+#: src/Compat/Conflicts.php:117
 msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:119
+#: src/Compat/Conflicts.php:122
 msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
 msgstr ""
 
-#: src/Compat/Conflicts.php:124
+#: src/Compat/Conflicts.php:127
 msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
 msgstr ""
 
-#: src/Compat/Conflicts.php:129
+#: src/Compat/Conflicts.php:132
 msgid "Деактивуйте плагін, що дублює Rank Math (title, schema, sitemap, редиректи)."
 msgstr ""
 
-#: src/Compat/Conflicts.php:134
+#: src/Compat/Conflicts.php:137
 msgid "Активний інший мультимовний плагін: модуль multilang вимкнено"
 msgstr ""
 
-#: src/Compat/Conflicts.php:139
+#: src/Compat/Conflicts.php:142
 msgid "Підтримуваний мультимовний плагін — Polylang. Деактивуйте конфліктний плагін, модуль увімкнеться сам."
 msgstr ""
 
-#: src/Compat/Conflicts.php:144
+#: src/Compat/Conflicts.php:147
 msgid "Активний плагін редиректів поруч із редиректами vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:149
+#: src/Compat/Conflicts.php:152
 msgid "Редиректи слагів і термінів веде vextra-core (через Rank Math). Перевірте, що правила не дублюються."
 msgstr ""
 
-#: src/Compat/Conflicts.php:154
+#: src/Compat/Conflicts.php:157
 msgid "Активний плагін списку бажань (власна функція планується)"
 msgstr ""
 
-#: src/Compat/Conflicts.php:159
+#: src/Compat/Conflicts.php:162
 msgid "Інформаційно: після появи власного списку бажань плагін доведеться вимкнути."
 msgstr ""
 
-#: src/Compat/Conflicts.php:164
+#: src/Compat/Conflicts.php:167
 msgid "Активний плагін безпеки з лімітами запитів поруч із модулем guard"
 msgstr ""
 
-#: src/Compat/Conflicts.php:169
+#: src/Compat/Conflicts.php:172
 msgid "Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403."
 msgstr ""
 
-#: src/Compat/Conflicts.php:174
+#: src/Compat/Conflicts.php:177
 msgid "Активний плагін захисту входу поряд із модулем security (ліміти спроб входу, XML-RPC, версії)"
 msgstr ""
 
-#: src/Compat/Conflicts.php:179
+#: src/Compat/Conflicts.php:182
 msgid "Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу."
 msgstr ""
 
-#: src/Compat/Conflicts.php:184
+#: src/Compat/Conflicts.php:187
 msgid "Активний другий плагін двофакторної автентифікації поряд із «Two Factor»"
 msgstr ""
 
-#: src/Compat/Conflicts.php:189
+#: src/Compat/Conflicts.php:192
 msgid "Залиште один плагін 2FA (підтримуваний: «Two Factor»): два плагіни борються за хуки authenticate / wp_login."
 msgstr ""
 
-#: src/Compat/Conflicts.php:194
+#: src/Compat/Conflicts.php:197
 msgid "Активний плагін капчі / Turnstile поряд із вбудованою перевіркою vextra-core"
 msgstr ""
 
-#: src/Compat/Conflicts.php:199
+#: src/Compat/Conflicts.php:202
 msgid "Вимкніть капчу на формах входу в іншому плагіні або деактивуйте його: інакше на формі буде два віджети."
 msgstr ""
 
-#: src/Compat/Conflicts.php:204
+#: src/Compat/Conflicts.php:207
+msgid "Активний плагін відгуків / коментарів поряд із політикою відгуків vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php:212
+msgid "Політика відгуків (лише покупці, модерація, ліміти) діє попри плагін, але його форма й REST-маршрути можуть її обходити: деактивуйте плагін."
+msgstr ""
+
+#: src/Compat/Conflicts.php:217
+msgid "Налаштування коментарів / відгуків не збігаються з політикою vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php:222
+msgid "Виконайте `wp vextra reviews reconcile` (значення в БД). Якщо розбіжність лишається, плагін фільтрує опцію через option_* / pre_option_*: вимкніть цей фільтр."
+msgstr ""
+
+#: src/Compat/Conflicts.php:227
 msgid "ЗАПУСК ЗАБЛОКОВАНО: персонал без двофакторної автентифікації"
 msgstr ""
 
-#: src/Compat/Conflicts.php:209
+#: src/Compat/Conflicts.php:232
 msgid "Активуйте плагін «Two Factor» і налаштуйте TOTP + резервні коди кожному користувачу з правами керування (профіль → Two-Factor Options). Обов’язково до запуску."
 msgstr ""
 
-#: src/Compat/Conflicts.php:214
+#: src/Compat/Conflicts.php:237
 msgid "У Rank Math не вимкнено архіви авторів: логін автора може потрапити в індекс"
 msgstr ""
 
-#: src/Compat/Conflicts.php:219
+#: src/Compat/Conflicts.php:242
 msgid "Rank Math → Заголовки та мета → Автори → «Вимкнути архіви авторів» увімкнути."
 msgstr ""
 
-#: src/Compat/Conflicts.php:224
+#: src/Compat/Conflicts.php:247
 msgid "У Rank Math заповнено редактор robots.txt: він замінює базовий текст, у якому guard об’єднує свої правила"
 msgstr ""
 
-#: src/Compat/Conflicts.php:229
+#: src/Compat/Conflicts.php:252
 msgid "Залиште в редакторі рядок «Sitemap:» або очистіть редактор (Rank Math → Загальні налаштування → Редактор robots.txt)."
 msgstr ""
 
-#: src/Compat/Conflicts.php:418
+#: src/Compat/Conflicts.php:441
 msgid "плагін «Two Factor» не активний"
 msgstr ""
 
@@ -151,7 +167,7 @@ msgstr ""
 msgid "Забагато запитів"
 msgstr ""
 
-#: src/Integrations/Turnstile/Turnstile.php:91
+#: src/Integrations/Turnstile/Turnstile.php:105
 msgid "Увімкніть JavaScript, щоб пройти перевірку «я не робот»."
 msgstr ""
 
@@ -167,46 +183,97 @@ msgstr ""
 msgid "vextra-core потребує WordPress %s або новішої версії."
 msgstr ""
 
-#: src/Security/AppPasswords.php:72
-#: src/Security/GenericErrors.php:74
-#: src/Security/OwnerBotRole.php:223
-msgid "Невірний логін або пароль."
+#: src/Reviews/Form.php:74
+#: src/Reviews/Policy.php:88
+msgid "Відгук можуть залишити лише покупці цього товару."
 msgstr ""
 
-#. translators: %d: minutes until the next attempt is allowed.
-#: src/Security/LoginThrottle.php:274
-#, php-format
-msgid "Забагато спроб входу. Спробуйте за %d хв."
+#: src/Reviews/Form.php:76
+#: src/Reviews/Form.php:141
+msgid "Увійдіть, щоб залишити відгук"
 msgstr ""
 
-#: src/Security/LostPassword.php:56
-msgid "Якщо такий обліковий запис існує, ми надіслали лист із інструкціями."
+#: src/Reviews/Form.php:116
+#: src/Reviews/Policy.php:91
+msgid "Ви вже залишили відгук на цей товар."
 msgstr ""
 
-#: src/Security/OwnerBotRole.php:124
-msgid "Vextra: власний агент"
+#: src/Reviews/Gate.php:123
+#: src/Reviews/Policy.php:85
+msgid "Відгуки до цього матеріалу закриті."
 msgstr ""
 
+#: src/Reviews/Gate.php:128
+msgid "Форма застаріла. Оновіть сторінку й спробуйте ще раз."
+msgstr ""
+
+#: src/Reviews/Gate.php:194
 #: src/Security/TurnstileForms.php:206
 msgid "Підтвердіть, що ви не робот і спробуйте ще раз."
 msgstr ""
 
-#: src/Security/TwoFactorPolicy.php:101
+#: src/Reviews/Gate.php:239
+msgid "Відгук не прийнято"
+msgstr ""
+
+#: src/Reviews/Policy.php:49
+msgid "Оберіть оцінку від 1 до 5."
+msgstr ""
+
+#: src/Reviews/Policy.php:64
+msgid "Посилання у відгуках заборонені."
+msgstr ""
+
+#: src/Reviews/Policy.php:82
+msgid "Щоб залишити відгук, увійдіть в особистий кабінет."
+msgstr ""
+
+#: src/Reviews/Policy.php:187
+msgid "Покупець"
+msgstr ""
+
+#. translators: 1: minimum, 2: maximum number of characters.
+#: src/Reviews/Policy.php:205
+#, php-format
+msgid "Відгук має містити від %1$d до %2$d символів."
+msgstr ""
+
+#: src/Security/AppPasswords.php:72
+#: src/Security/GenericErrors.php:74
+#: src/Security/OwnerBotRole.php:351
+msgid "Невірний логін або пароль."
+msgstr ""
+
+#. translators: %d: minutes until the next attempt is allowed.
+#: src/Security/LoginThrottle.php:294
+#, php-format
+msgid "Забагато спроб входу. Спробуйте за %d хв."
+msgstr ""
+
+#: src/Security/LostPassword.php:92
+msgid "Якщо такий обліковий запис існує, ми надіслали лист із інструкціями."
+msgstr ""
+
+#: src/Security/OwnerBotRole.php:154
+msgid "Ця дія недоступна для службового облікового запису."
+msgstr ""
+
+#: src/Security/OwnerBotRole.php:252
+msgid "Vextra: власний агент"
+msgstr ""
+
+#: src/Security/TwoFactorPolicy.php:102
 msgid "Двофакторну автентифікацію персоналу не увімкнено: активуйте плагін «Two Factor» (Плагіни)."
 msgstr ""
 
-#: src/Security/TwoFactorPolicy.php:107
+#: src/Security/TwoFactorPolicy.php:108
 msgid "Ваш обліковий запис керування магазином ще не захищений двофакторною автентифікацією. Налаштуйте додаток-автентифікатор (TOTP) та резервні коди у своєму профілі."
 msgstr ""
 
-#: src/Security/TwoFactorPolicy.php:108
+#: src/Security/TwoFactorPolicy.php:109
 msgid "Налаштувати зараз"
 msgstr ""
 
-#: src/Security/TwoFactorPolicy.php:116
+#: src/Security/TwoFactorPolicy.php:117
 msgid "Приховати до наступного входу"
-msgstr ""
-
-#: src/Security/OwnerBotRole.php
-msgid "Ця дія недоступна для службового облікового запису."
 msgstr ""
