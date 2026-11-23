@@ -32,6 +32,15 @@ final class RankMath extends AbstractIntegration {
 		return class_exists( 'RankMath' ) || defined( 'RANK_MATH_VERSION' );
 	}
 
+	/**
+	 * Rank Math options read on every front request and usually missing (Tracking reads the connect data for the user e-mail).
+	 *
+	 * @return string[]
+	 */
+	public function primed_options(): array {
+		return [ 'rank_math_connect_data' ];
+	}
+
 	public function version(): ?string {
 		return defined( 'RANK_MATH_VERSION' ) ? (string) RANK_MATH_VERSION : null;
 	}
