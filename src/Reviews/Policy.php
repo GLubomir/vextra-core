@@ -53,10 +53,17 @@ final class Policy {
 		if ( ! is_string( $content ) || ! mb_check_encoding( $content, 'UTF-8' ) ) {
 			return self::error( 'vx_review_length', self::length_message(), 422 );
 		}
-		// SEC-056: invisible / format characters and Unicode whitespace do not count.
-		$visible = (string) preg_replace( '/[\p{Cf}\p{Cc}\x{200B}-\x{200D}\x{FEFF}\x{2060}]+/u', '', wp_strip_all_tags( $content ) );
+		// SEC-056: invisible / format / filler characters and Unicode whitespace do not count; NFC when intl exists.
+		$visible = (string) preg_replace( '/[\p{Cf}\p{Cc}\x{200B}-\x{200D}\x{FEFF}\x{2060}\x{115F}\x{1160}\x{3164}\x{FFA0}]+/u', '', wp_strip_all_tags( $content ) );
+		if ( class_exists( '\Normalizer' ) ) {
+			$norm    = \Normalizer::normalize( $visible, \Normalizer::FORM_C );
+			$visible = is_string( $norm ) ? $norm : $visible;
+		}
 		$visible = (string) preg_replace( '/^[\s\p{Z}]+|[\s\p{Z}]+$/u', '', $visible );
 		$length  = mb_strlen( $visible );
+		if ( $length >= Config::get( 'min_length' ) && preg_match_all( '/[\p{L}\p{N}]/u', $visible ) < 5 ) {
+			$length = 0; // Marks, symbols or a single letter repeated with combining marks: not a review.
+		}
 		if ( $length < Config::get( 'min_length' ) || $length > Config::get( 'max_length' ) ) {
 			return self::error( 'vx_review_length', self::length_message(), 422 );
 		}
@@ -115,38 +122,9 @@ final class Policy {
 		}
 		$key = $user_id . ':' . $post_id;
 		if ( ! isset( self::$bought[ $key ] ) ) {
-			self::$bought[ $key ] = self::owns_completed_order( $user_id, $post_id );
+			self::$bought[ $key ] = Buyers::has( $user_id, $post_id );
 		}
 		return self::$bought[ $key ];
-	}
-
-	/**
-	 * SEC-057: a COMPLETED order whose customer is this account (never matched by billing e-mail) holds the product or a variation of it.
-	 *
-	 * @param int $user_id User ID.
-	 * @param int $post_id Product ID.
-	 */
-	private static function owns_completed_order( int $user_id, int $post_id ): bool {
-		$orders = wc_get_orders(
-			[
-				'customer_id' => $user_id,
-				'status'      => [ 'completed' ],
-				'limit'       => 100,
-				'orderby'     => 'date',
-				'order'       => 'DESC',
-			]
-		);
-		foreach ( (array) $orders as $order ) {
-			if ( ! $order instanceof \WC_Order || (int) $order->get_customer_id() !== $user_id ) {
-				continue;
-			}
-			foreach ( $order->get_items() as $item ) {
-				if ( is_callable( [ $item, 'get_product_id' ] ) && (int) $item->get_product_id() === $post_id ) {
-					return true;
-				}
-			}
-		}
-		return false;
 	}
 
 	/**

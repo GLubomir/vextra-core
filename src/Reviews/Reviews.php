@@ -30,6 +30,7 @@ final class Reviews implements ModuleInterface {
 
 	public function register(): void {
 		Failsafe::run( 'register-reviews-options', static fn() => ( new Options() )->register() );
+		Failsafe::run( 'register-reviews-buyers', static fn() => ( new Buyers() )->register() );
 		Failsafe::run( 'register-reviews-closed-data', static fn() => ( new Closed() )->register_data() );
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
