@@ -23,10 +23,11 @@ final class Responder {
 	 *
 	 * @param int    $retry  Seconds until the window resets.
 	 * @param string $format `json` (AJAX / REST-like) or `html` (page).
-	 * @param string $route  Short route label for the log.
+	 * @param string $route   Short route label for the log.
+	 * @param string $channel Log channel (`guard` default; the Security module logs under `security`).
 	 */
-	public static function rate_limited( int $retry, string $format, string $route ): never {
-		self::log( '429', $route );
+	public static function rate_limited( int $retry, string $format, string $route, string $channel = 'guard' ): never {
+		self::log( '429', $route, $channel );
 		self::headers( 429 );
 		header( 'Retry-After: ' . max( 1, $retry ) );
 
@@ -112,12 +113,13 @@ final class Responder {
 	/**
 	 * Log a guard event, sampled. Never writes a raw IP.
 	 *
-	 * @param string $event `429`, `403`, `redirect`.
-	 * @param string $route Short label (no query string).
+	 * @param string $event   `429`, `403`, `redirect` (Security: `lock`, `429`).
+	 * @param string $route   Short label (no query string).
+	 * @param string $channel Log channel (source `vextra-<channel>`).
 	 */
-	public static function log( string $event, string $route ): void {
+	public static function log( string $event, string $route, string $channel = 'guard' ): void {
 		$hash = ClientIp::hash();
-		$key  = 'log:' . md5( $event . '|' . $route . '|' . $hash );
+		$key  = 'log:' . md5( $channel . '|' . $event . '|' . $route . '|' . $hash );
 
 		if ( wp_using_ext_object_cache() ) {
 			if ( ! wp_cache_add( $key, 1, 'vx_guard', 60 ) ) {
@@ -132,12 +134,12 @@ final class Responder {
 		}
 
 		Log::warning(
-			'Guard ' . $event,
+			ucfirst( $channel ) . ' ' . $event,
 			[
 				'route' => substr( $route, 0, 80 ),
 				'ip'    => $hash,
 			],
-			'guard'
+			$channel
 		);
 	}
 
