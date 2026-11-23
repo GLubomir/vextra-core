@@ -124,7 +124,7 @@ final class TurnstileForms {
 	 * @param mixed $errors WP_Error collecting validation problems.
 	 */
 	public function check_lost_password( $errors = null ): void {
-		if ( ! $errors instanceof \WP_Error || 'POST' !== Request::method() || in_array( self::ERROR_CODE, $errors->get_error_codes(), true ) ) {
+		if ( ! $errors instanceof \WP_Error || 'POST' !== Request::method() || LostPassword::in_job() || in_array( self::ERROR_CODE, $errors->get_error_codes(), true ) ) {
 			return;
 		}
 		$error = $this->verify_request( 'lostpassword' );
@@ -176,7 +176,7 @@ final class TurnstileForms {
 	/**
 	 * Check the posted token. Null = passed (or the provider failed open); an error = refuse.
 	 *
-	 * @param string $route Short label for the log.
+	 * @param string $route Short label for the log AND the widget action expected in the siteverify answer (SEC-049).
 	 */
 	private function verify_request( string $route ): ?\WP_Error {
 		$ts = $this->adapter();
@@ -192,7 +192,7 @@ final class TurnstileForms {
 
 		$verdict = Failsafe::run(
 			'turnstile-verify',
-			static fn(): array => $ts->verify( $token, ClientIp::get( false ) ),
+			static fn(): array => $ts->verify( $token, ClientIp::get( false ), $route ),
 			[
 				'ok'     => true,
 				'reason' => 'guard_failed',

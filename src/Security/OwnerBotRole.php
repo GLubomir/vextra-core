@@ -6,6 +6,10 @@
  *   `vx_owner_bot` is what Guard\Exempt, Abilities and Application Passwords check; the role slug is only a convenience.
  * - `ensure()` creates / reconciles the role (activation, CLI, and on `init` whenever the stored version differs, the role is
  *   gone or its caps drifted). Deactivation keeps the role.
+ * - SEC-046: the bot cannot change its own password, e-mail or roles (REST `rest_request_before_callbacks` refuses the params, and
+ *   `wp_pre_insert_user_data` keeps the stored hash / address for any other path). Rotation stays CLI-only.
+ * - SEC-048: `map_meta_cap` denies edit / delete / publish of the Woo system pages (shop, cart, checkout, my account, terms),
+ *   the front page and their Polylang twins; ordinary pages and products are unchanged.
  * - The bot never signs in interactively: wp-login / Woo login refuse it with the generic `vx_invalid_login` error at
  *   `authenticate` priority 1 and again at 999; it has no password reset. Only an Application Password over REST works.
  *
@@ -17,6 +21,8 @@ declare(strict_types=1);
 namespace Vextra\Core\Security;
 
 use Vextra\Core\Guard\Failsafe;
+use Vextra\Core\Integrations\Polylang\Polylang;
+use Vextra\Core\Plugin;
 
 final class OwnerBotRole {
 
@@ -51,6 +57,23 @@ final class OwnerBotRole {
 	];
 
 	/**
+	 * Meta capabilities refused on the protected pages.
+	 */
+	private const PAGE_CAPS = [ 'edit_post', 'edit_page', 'delete_post', 'delete_page', 'publish_post', 'publish_page' ];
+
+	/**
+	 * REST user fields the bot may never send for itself.
+	 */
+	private const SELF_PARAMS = [ 'password', 'email', 'roles', 'username' ];
+
+	/**
+	 * Protected page ids, resolved once per request.
+	 *
+	 * @var int[]|null
+	 */
+	private ?array $protected = null;
+
+	/**
 	 * Capabilities no filter may add (defence in depth for the filter).
 	 */
 	private const FORBIDDEN = [
@@ -79,6 +102,104 @@ final class OwnerBotRole {
 		add_filter( 'authenticate', [ $this, 'refuse' ], 1, 2 );
 		add_filter( 'authenticate', [ $this, 'enforce' ], 999, 1 );
 		add_filter( 'allow_password_reset', [ $this, 'no_reset' ], 99, 2 );
+		add_filter( 'map_meta_cap', [ $this, 'protect_pages' ], 10, 4 );
+		add_filter( 'rest_request_before_callbacks', [ $this, 'refuse_self_credentials' ], 10, 3 );
+		add_filter( 'wp_pre_insert_user_data', [ $this, 'keep_credentials' ], 99, 3 );
+	}
+
+	/**
+	 * `map_meta_cap`: the bot cannot edit, delete or publish the system pages (SEC-048).
+	 *
+	 * @param mixed $caps    Required primitive caps.
+	 * @param mixed $cap     Meta cap being resolved.
+	 * @param mixed $user_id Acting user id.
+	 * @param mixed $args    Meta cap arguments (the post id first).
+	 * @return mixed
+	 */
+	public function protect_pages( $caps, $cap = '', $user_id = 0, $args = [] ) {
+		if ( ! is_string( $cap ) || ! in_array( $cap, self::PAGE_CAPS, true ) || ! is_numeric( $user_id ) || ! is_array( $args ) || empty( $args[0] ) || ! is_numeric( $args[0] ) ) {
+			return $caps;
+		}
+		$actor = get_userdata( (int) $user_id );
+		if ( ! $actor instanceof \WP_User || ! self::is_bot( $actor ) ) {
+			return $caps;
+		}
+		$ids = Failsafe::run( 'owner-bot-pages', fn(): array => $this->protected_pages(), [] );
+		return in_array( (int) $args[0], (array) $ids, true ) ? [ 'do_not_allow' ] : $caps;
+	}
+
+	/**
+	 * `rest_request_before_callbacks`: a user update from the bot may not carry a password, e-mail, roles or username (SEC-046).
+	 * (`rest_pre_insert_user` is not usable: core's update handler ignores an error returned there.)
+	 *
+	 * @param mixed $response Response so far (null before the callback).
+	 * @param mixed $handler  Matched route handler.
+	 * @param mixed $request  WP_REST_Request.
+	 * @return mixed
+	 */
+	public function refuse_self_credentials( $response, $handler = null, $request = null ) {
+		unset( $handler );
+		if ( null !== $response || ! $request instanceof \WP_REST_Request || ! in_array( $request->get_method(), [ 'POST', 'PUT', 'PATCH' ], true )
+			|| 1 !== preg_match( '#^/wp/v2/users/(me|\d+)/?$#', $request->get_route() ) || ! self::is_bot( wp_get_current_user() ) ) {
+			return $response;
+		}
+		foreach ( self::SELF_PARAMS as $param ) {
+			if ( $request->has_param( $param ) ) {
+				return new \WP_Error( 'rest_cannot_edit', __( 'Ця дія недоступна для службового облікового запису.', 'vextra-core' ), [ 'status' => 403 ] );
+			}
+		}
+		return $response;
+	}
+
+	/**
+	 * `wp_pre_insert_user_data`: whatever path updates the bot as the bot, the stored password hash and e-mail survive.
+	 * WP-CLI (rotation, `owner-bot repair`) has no current user and is not affected.
+	 *
+	 * @param mixed $data    Row about to be written.
+	 * @param mixed $update  True for an update.
+	 * @param mixed $user_id User id (null for an insert).
+	 * @return mixed
+	 */
+	public function keep_credentials( $data, $update = false, $user_id = null ) {
+		if ( ! is_array( $data ) || ! $update || ! is_numeric( $user_id ) || get_current_user_id() !== (int) $user_id || ! self::is_bot( wp_get_current_user() ) ) {
+			return $data;
+		}
+		$stored = get_userdata( (int) $user_id );
+		if ( $stored instanceof \WP_User ) {
+			$data['user_pass']  = $stored->user_pass;
+			$data['user_email'] = $stored->user_email;
+		}
+		return $data;
+	}
+
+	/**
+	 * Pages the bot may never change: Woo system pages, the front page and their translations.
+	 *
+	 * @return int[]
+	 */
+	private function protected_pages(): array {
+		if ( null !== $this->protected ) {
+			return $this->protected;
+		}
+		$ids = [];
+		if ( function_exists( 'wc_get_page_id' ) ) {
+			foreach ( [ 'shop', 'cart', 'checkout', 'myaccount', 'terms' ] as $page ) {
+				$ids[] = (int) wc_get_page_id( $page );
+			}
+		}
+		$ids[] = (int) get_option( 'page_on_front' );
+		$ids   = array_values( array_unique( array_filter( $ids, static fn( int $id ): bool => $id > 0 ) ) );
+		$pll   = Plugin::instance()->integration( 'polylang' );
+		$all   = $ids;
+		if ( $pll instanceof Polylang ) {
+			foreach ( $ids as $id ) {
+				foreach ( $pll->translations( $id ) as $twin ) {
+					$all[] = (int) $twin;
+				}
+			}
+		}
+		$this->protected = array_values( array_unique( array_filter( $all, static fn( int $id ): bool => $id > 0 ) ) );
+		return $this->protected;
 	}
 
 	/**
