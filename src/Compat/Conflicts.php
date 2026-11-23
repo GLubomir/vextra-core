@@ -20,6 +20,7 @@ namespace Vextra\Core\Compat;
 
 use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Plugin;
+use Vextra\Core\Reviews\Options as ReviewOptions;
 use Vextra\Core\Security\TwoFactorPolicy;
 use Vextra\Core\Support\Log;
 
@@ -42,6 +43,8 @@ final class Conflicts {
 		'login'     => [ 'limit-login-attempts-reloaded', 'loginizer', 'wps-limit-login', 'login-lockdown', 'wp-cerber' ],
 		// Our own choice, `two-factor`, is never a conflict. Slugs verified on wordpress.org (2026-11).
 		'twofactor' => [ 'wp-2fa', 'two-factor-authentication', 'miniorange-2-factor-authentication', 'google-authenticator', 'rublon' ],
+		// Review / comment plugins that would bring their own submit path next to the policy of the `reviews` module (Akismet is allowed, never a conflict). Slugs verified on wordpress.org (2026-11).
+		'reviews'   => [ 'site-reviews', 'customer-reviews-woocommerce', 'wpdiscuz', 'yith-woocommerce-advanced-reviews', 'wp-review' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -198,6 +201,26 @@ final class Conflicts {
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Вимкніть капчу на формах входу в іншому плагіні або деактивуйте його: інакше на формі буде два віджети.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-reviews-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін відгуків / коментарів поряд із політикою відгуків vextra-core', 'vextra-core' ),
+				'module'   => 'reviews',
+				'detector' => fn() => $this->module_active( 'reviews' ) ? $this->detect_plugins( self::PLUGINS['reviews'] ) : false,
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Політика відгуків (лише покупці, модерація, ліміти) діє попри плагін, але його форма й REST-маршрути можуть її обходити: деактивуйте плагін.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'reviews-policy-overridden',
+				'title'    => static fn(): string => __( 'Налаштування коментарів / відгуків не збігаються з політикою vextra-core', 'vextra-core' ),
+				'module'   => 'reviews',
+				'detector' => fn() => $this->detect_reviews_policy(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Виконайте `wp vextra reviews reconcile` (значення в БД). Якщо розбіжність лишається, плагін фільтрує опцію через option_* / pre_option_*: вимкніть цей фільтр.', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
 				'id'       => 'staff-without-2fa',
@@ -421,6 +444,19 @@ final class Conflicts {
 			return false;
 		}
 		return implode( ', ', array_slice( $staff, 0, 10 ) ) . ( count( $staff ) > 10 ? '…' : '' );
+	}
+
+	/**
+	 * Reviews policy: a stored option differs from the policy or something filters the effective value away (detail = option names).
+	 *
+	 * @return false|string
+	 */
+	private function detect_reviews_policy() {
+		if ( ! $this->module_active( 'reviews' ) ) {
+			return false;
+		}
+		$bad = array_unique( array_merge( array_keys( ReviewOptions::drift() ), array_keys( ReviewOptions::overridden() ) ) );
+		return array() === $bad ? false : implode( ', ', array_slice( $bad, 0, 10 ) ) . ( count( $bad ) > 10 ? '…' : '' );
 	}
 
 	/**

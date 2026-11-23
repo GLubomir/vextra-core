@@ -208,3 +208,63 @@ msgstr "Скрыть до следующего входа"
 #: src/Security/OwnerBotRole.php
 msgid "Ця дія недоступна для службового облікового запису."
 msgstr "Это действие недоступно для служебной учётной записи."
+
+#: src/Reviews/Policy.php
+msgid "Оберіть оцінку від 1 до 5."
+msgstr "Выберите оценку от 1 до 5."
+
+#. translators: 1: minimum, 2: maximum number of characters.
+#: src/Reviews/Policy.php
+msgid "Відгук має містити від %1$d до %2$d символів."
+msgstr "Отзыв должен содержать от %1$d до %2$d символов."
+
+#: src/Reviews/Policy.php
+msgid "Посилання у відгуках заборонені."
+msgstr "Ссылки в отзывах запрещены."
+
+#: src/Reviews/Policy.php
+msgid "Щоб залишити відгук, увійдіть в особистий кабінет."
+msgstr "Чтобы оставить отзыв, войдите в личный кабинет."
+
+#: src/Reviews/Policy.php
+#: src/Reviews/Gate.php
+msgid "Відгуки до цього матеріалу закриті."
+msgstr "Отзывы к этому материалу закрыты."
+
+#: src/Reviews/Policy.php
+#: src/Reviews/Form.php
+msgid "Відгук можуть залишити лише покупці цього товару."
+msgstr "Отзыв могут оставить только покупатели этого товара."
+
+#: src/Reviews/Policy.php
+#: src/Reviews/Form.php
+msgid "Ви вже залишили відгук на цей товар."
+msgstr "Вы уже оставили отзыв на этот товар."
+
+#: src/Reviews/Policy.php
+msgid "Покупець"
+msgstr "Покупатель"
+
+#: src/Reviews/Gate.php
+msgid "Відгук не прийнято"
+msgstr "Отзыв не принят"
+
+#: src/Reviews/Form.php
+msgid "Увійдіть, щоб залишити відгук"
+msgstr "Войдите, чтобы оставить отзыв"
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін відгуків / коментарів поряд із політикою відгуків vextra-core"
+msgstr "Активен плагин отзывов / комментариев рядом с политикой отзывов vextra-core"
+
+#: src/Compat/Conflicts.php
+msgid "Політика відгуків (лише покупці, модерація, ліміти) діє попри плагін, але його форма й REST-маршрути можуть її обходити: деактивуйте плагін."
+msgstr "Политика отзывов (только покупатели, модерация, лимиты) действует несмотря на плагин, но его форма и REST-маршруты могут её обходить: деактивируйте плагин."
+
+#: src/Compat/Conflicts.php
+msgid "Налаштування коментарів / відгуків не збігаються з політикою vextra-core"
+msgstr "Настройки комментариев / отзывов не совпадают с политикой vextra-core"
+
+#: src/Compat/Conflicts.php
+msgid "Виконайте `wp vextra reviews reconcile` (значення в БД). Якщо розбіжність лишається, плагін фільтрує опцію через option_* / pre_option_*: вимкніть цей фільтр."
+msgstr "Выполните `wp vextra reviews reconcile` (значения в БД). Если расхождение остаётся, плагин фильтрует опцию через option_* / pre_option_*: отключите этот фильтр."

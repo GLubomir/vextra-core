@@ -43,7 +43,7 @@ final class Turnstile extends AbstractIntegration {
 	/**
 	 * Allowed `data-action` values.
 	 */
-	public const ACTIONS = [ 'login', 'lostpassword', 'register', 'checkout' ];
+	public const ACTIONS = [ 'login', 'lostpassword', 'register', 'checkout', 'review' ];
 
 	/**
 	 * Documented Cloudflare testing secrets (always pass / always block / token already spent).
