@@ -38,6 +38,7 @@ final class Conflicts {
 		'redirect'  => [ 'redirection', 'safe-redirect-manager', 'simple-301-redirects' ],
 		'wishlist'  => [ 'yith-woocommerce-wishlist', 'yith-woocommerce-wishlist-premium', 'ti-woocommerce-wishlist', 'ti-woocommerce-wishlist-premium' ],
 		'security'  => [ 'wordfence', 'better-wp-security', 'all-in-one-wp-security-and-firewall' ],
+		'login'     => [ 'limit-login-attempts-reloaded', 'loginizer', 'wps-limit-login', 'login-lockdown', 'wp-cerber' ],
 	];
 
 	/**
@@ -163,6 +164,26 @@ final class Conflicts {
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-login-protection-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін захисту входу поряд із модулем security (ліміти спроб входу, XML-RPC, версії)', 'vextra-core' ),
+				'module'   => 'security',
+				'detector' => fn() => $this->module_active( 'security' ) ? $this->detect_plugins( array_merge( self::PLUGINS['login'], self::PLUGINS['security'] ) ) : false,
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'author-archives-enabled',
+				'title'    => static fn(): string => __( 'У Rank Math не вимкнено архіви авторів: логін автора може потрапити в індекс', 'vextra-core' ),
+				'module'   => 'security',
+				'detector' => fn() => $this->detect_author_archives(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Rank Math → Заголовки та мета → Автори → «Вимкнути архіви авторів» увімкнути.', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
 				'id'       => 'rankmath-robots-editor',
@@ -347,6 +368,18 @@ final class Conflicts {
 		}
 		$value = $rank->setting( 'general.redirections_post_redirect', 'off' );
 		return true === $value || in_array( (string) $value, [ 'on', '1', 'yes' ], true );
+	}
+
+	/**
+	 * Author archives are on in Rank Math while the Security module answers 404 for them (a login slug can still reach the index).
+	 */
+	private function detect_author_archives(): bool {
+		$rank = Plugin::instance()->integration( 'rankmath' );
+		if ( ! $rank instanceof RankMath || ! $rank->is_available() || ! $this->module_active( 'security' ) ) {
+			return false;
+		}
+		$value = $rank->setting( 'titles.disable_author_archives', 'off' );
+		return ! ( true === $value || in_array( (string) $value, [ 'on', '1', 'yes' ], true ) );
 	}
 
 	/**

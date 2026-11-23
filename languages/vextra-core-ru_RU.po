@@ -118,3 +118,33 @@ msgstr "Оставьте в редакторе строку «Sitemap:» или 
 #, php-format
 msgid "Модуль «%s» вимкнено."
 msgstr "Модуль «%s» отключён."
+
+#: src/Security/GenericErrors.php
+msgid "Невірний логін або пароль."
+msgstr "Неверный логин или пароль."
+
+#. translators: %d: minutes until the next attempt is allowed.
+#: src/Security/LoginThrottle.php
+#, php-format
+msgid "Забагато спроб входу. Спробуйте за %d хв."
+msgstr "Слишком много попыток входа. Попробуйте через %d мин."
+
+#: src/Security/LostPassword.php
+msgid "Якщо такий обліковий запис існує, ми надіслали лист із інструкціями."
+msgstr "Если такая учётная запись существует, мы отправили письмо с инструкциями."
+
+#: src/Compat/Conflicts.php
+msgid "Активний плагін захисту входу поряд із модулем security (ліміти спроб входу, XML-RPC, версії)"
+msgstr "Активен плагин защиты входа рядом с модулем security (лимиты попыток входа, XML-RPC, версии)"
+
+#: src/Compat/Conflicts.php
+msgid "Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу."
+msgstr "Задайте VX_SECURITY_LOGIN_IP_LIMIT и VX_SECURITY_LOGIN_USER_LIMIT = 0 в wp-config.php или отключите другой плагин, чтобы не дублировать блокировку входа."
+
+#: src/Compat/Conflicts.php
+msgid "У Rank Math не вимкнено архіви авторів: логін автора може потрапити в індекс"
+msgstr "В Rank Math не отключены архивы авторов: логин автора может попасть в индекс"
+
+#: src/Compat/Conflicts.php
+msgid "Rank Math → Заголовки та мета → Автори → «Вимкнути архіви авторів» увімкнути."
+msgstr "Rank Math → Заголовки и мета → Авторы → включить «Отключить архивы авторов»."

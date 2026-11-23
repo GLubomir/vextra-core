@@ -54,6 +54,31 @@ final class RateLimiter {
 	}
 
 	/**
+	 * Read a bucket without counting a hit (lock checks, status output).
+	 *
+	 * @param string $bucket  Bucket name.
+	 * @param string $subject Subject.
+	 * @param int    $limit   Hits per window (as passed to hit()); 0 = bucket disabled.
+	 * @return array{count:int,remaining:int,retry_after:int} `retry_after` is the seconds left in the window (0 when no window is open).
+	 */
+	public static function peek( string $bucket, string $subject, int $limit ): array {
+		$state = self::read( $bucket . ':' . md5( $subject ) );
+		$now   = time();
+		if ( $limit <= 0 || ! is_array( $state ) || ! isset( $state[0], $state[1] ) || (int) $state[1] <= $now ) {
+			return [
+				'count'       => 0,
+				'remaining'   => $limit > 0 ? $limit : PHP_INT_MAX,
+				'retry_after' => 0,
+			];
+		}
+		return [
+			'count'       => (int) $state[0],
+			'remaining'   => max( 0, $limit - (int) $state[0] ),
+			'retry_after' => max( 1, (int) $state[1] - $now ),
+		];
+	}
+
+	/**
 	 * Drop a bucket entry (tests, owner-requested resets).
 	 *
 	 * @param string $bucket  Bucket name.

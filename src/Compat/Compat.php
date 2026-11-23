@@ -80,6 +80,11 @@ final class Compat implements ModuleInterface {
 			$e( 'wordpress', 'function', 'wp_prime_option_caches', false, 'theme ProductCardData', 'one query per option' ),
 			$e( 'wordpress', 'function', 'wp_using_ext_object_cache', true, 'theme ProductCardData, Support/Cache', 'none (core function)' ),
 			$e( 'wordpress', 'function', 'rest_convert_error_to_response', true, 'core Guard StoreApi', 'none (core function)' ),
+			$e( 'wordpress', 'function', 'wp_is_password_reset_allowed_for_user', false, 'core Security LostPassword', 'accounts that may not reset get a different message' ),
+			$e( 'wordpress', 'function', 'wp_authenticate_username_password', false, 'core Security LoginThrottle (remove_filter on a locked request)', 'password evaluated, lock error still returned' ),
+			$e( 'wordpress', 'function', 'wp_authenticate_email_password', false, 'core Security LoginThrottle (remove_filter on a locked request)', 'password evaluated, lock error still returned' ),
+			$e( 'wordpress', 'rest', '/wp/v2/users', true, 'core Security UserEnumeration (blocked for anonymous)', 'users listable (SEC-006)' ),
+			$e( 'wordpress', 'rest', '/wp-abilities/v1/abilities', false, 'core Security Abilities (listing closed for customers)', 'nothing to close' ),
 
 			// WooCommerce.
 			$e( 'woocommerce', 'class', 'WooCommerce', true, 'core WooCommerce adapter, theme Speculation', 'Woo modules disabled' ),
@@ -125,6 +130,9 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'hook', 'woocommerce_store_api_rate_limit_id', false, 'core Guard StoreApi', 'Woo keys anonymous clients by REMOTE_ADDR itself' ),
 			$e( 'woocommerce', 'rest', '/wc/store/v1/products', false, 'core Guard StoreApi (blocked for anonymous)', 'nothing to block' ),
 			$e( 'woocommerce', 'rest', '/wc/store/v1/cart/apply-coupon', false, 'core Guard StoreApi (coupon bucket)', 'coupon bucket unused for the Store API' ),
+			$e( 'woocommerce', 'function', 'wc_add_notice', false, 'core Security LostPassword (neutral Woo path)', 'validator error not shown' ),
+			$e( 'woocommerce', 'function', 'wc_get_account_endpoint_url', true, 'core Security LostPassword (neutral Woo path)', 'neutral Woo path unavailable' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_lost_password_confirmation_message', false, 'core Security LostPassword', 'Woo shows its own confirmation text' ),
 
 			// Polylang.
 			$e( 'polylang', 'const', 'POLYLANG_VERSION', true, 'core Polylang adapter', 'adapter unavailable' ),
