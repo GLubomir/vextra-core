@@ -26,6 +26,7 @@ final class Compat implements ModuleInterface {
 		'woocommerce' => 'woocommerce',
 		'polylang'    => 'polylang',
 		'rankmath'    => 'rankmath',
+		'twofactor'   => 'twofactor',
 	];
 
 	public function id(): string {
@@ -85,6 +86,9 @@ final class Compat implements ModuleInterface {
 			$e( 'wordpress', 'function', 'wp_authenticate_email_password', false, 'core Security LoginThrottle (remove_filter on a locked request)', 'password evaluated, lock error still returned' ),
 			$e( 'wordpress', 'rest', '/wp/v2/users', true, 'core Security UserEnumeration (blocked for anonymous)', 'users listable (SEC-006)' ),
 			$e( 'wordpress', 'rest', '/wp-abilities/v1/abilities', false, 'core Security Abilities (listing closed for customers)', 'nothing to close' ),
+			$e( 'wordpress', 'function', 'wp_is_application_passwords_available_for_user', false, 'core Security AppPasswords (filter of the same name)', 'every user may create Application Passwords (SEC-015)' ),
+			$e( 'wordpress', 'class', 'WP_Application_Passwords', false, 'core Security Cli (owner-bot create / revoke / list / repair)', 'owner-bot commands fail with a PHP error' ),
+			$e( 'wordpress', 'class', 'WP_Session_Tokens', false, 'core Security TwoFactorPolicy (session-scoped notice dismissal)', 'notice cannot be dismissed' ),
 
 			// WooCommerce.
 			$e( 'woocommerce', 'class', 'WooCommerce', true, 'core WooCommerce adapter, theme Speculation', 'Woo modules disabled' ),
@@ -133,6 +137,10 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'function', 'wc_add_notice', false, 'core Security LostPassword (neutral Woo path)', 'validator error not shown' ),
 			$e( 'woocommerce', 'function', 'wc_get_account_endpoint_url', true, 'core Security LostPassword (neutral Woo path)', 'neutral Woo path unavailable' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_lost_password_confirmation_message', false, 'core Security LostPassword', 'Woo shows its own confirmation text' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_login_form', false, 'core Security TurnstileForms (only with Turnstile keys)', 'no widget on the Woo login form (keep Turnstile keys unset)' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_register_form', false, 'core Security TurnstileForms (only with Turnstile keys)', 'no widget on the Woo register form' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_lostpassword_form', false, 'core Security TurnstileForms (only with Turnstile keys)', 'no widget on the Woo lost-password form' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_registration_errors', false, 'core Security TurnstileForms (only with Turnstile keys)', 'registration not challenged (registration is off)' ),
 
 			// Polylang.
 			$e( 'polylang', 'const', 'POLYLANG_VERSION', true, 'core Polylang adapter', 'adapter unavailable' ),
@@ -170,6 +178,12 @@ final class Compat implements ModuleInterface {
 			$e( 'rankmath', 'hook', 'rank_math/sitemap/entry', true, 'core RankMath adapter, Seo Sitemap', 'default entries' ),
 			$e( 'rankmath', 'hook', 'rank_math/sitemap/posts_to_exclude', true, 'core RankMath adapter, Seo Sitemap', 'noindex pages listed' ),
 			$e( 'rankmath', 'hook', 'rank_math/snippet/rich_snippet_product_entity', true, 'core RankMath adapter, Seo Schema', 'default schema' ),
+
+			// Two Factor (wordpress.org, optional: soft staff-2FA policy).
+			$e( 'twofactor', 'class', 'Two_Factor_Core', false, 'core TwoFactor adapter', 'staff 2FA not offered; rule staff-without-2fa reports it' ),
+			$e( 'twofactor', 'method', 'is_user_using_two_factor', false, 'core TwoFactor adapter', 'every staff user counted as without 2FA', 'Two_Factor_Core' ),
+			$e( 'twofactor', 'const', 'TWO_FACTOR_VERSION', false, 'core TwoFactor adapter', 'version shown empty' ),
+			$e( 'twofactor', 'hook', 'two_factor_providers', false, 'core Security TwoFactorPolicy (TOTP + Backup Codes only)', 'all providers (incl. e-mail codes) offered' ),
 		];
 
 		/**

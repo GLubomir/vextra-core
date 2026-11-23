@@ -4,7 +4,8 @@
  *
  * Services (one class per concern, each registered inside Failsafe so a failure is logged once and the request continues):
  * XmlRpc (SEC-013), Fingerprint (SEC-019), GenericErrors + LostPassword (SEC-007), LoginThrottle + Registration (SEC-008),
- * UserEnumeration (SEC-006), Abilities (SEC-023). TASK-029b appends its services to SERVICES.
+ * UserEnumeration (SEC-006), Abilities (SEC-023); TASK-029b: OwnerBotRole + AppPasswords (SEC-015), TurnstileForms (SEC-008),
+ * TwoFactorPolicy (SEC-008).
  *
  * Does not need WooCommerce, Polylang or Rank Math; Woo-specific hooks are added only when the Woo adapter is available.
  * Kill switch: constant `VX_SECURITY_DISABLED` (filter `vextra/core/security/enabled`). Request guards never run under WP-CLI.
@@ -34,6 +35,10 @@ final class Security implements ModuleInterface {
 		Registration::class,
 		UserEnumeration::class,
 		Abilities::class,
+		OwnerBotRole::class,
+		AppPasswords::class,
+		TurnstileForms::class,
+		TwoFactorPolicy::class,
 	];
 
 	public function id(): string {

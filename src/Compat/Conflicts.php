@@ -20,6 +20,7 @@ namespace Vextra\Core\Compat;
 
 use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Plugin;
+use Vextra\Core\Security\TwoFactorPolicy;
 use Vextra\Core\Support\Log;
 
 final class Conflicts {
@@ -39,6 +40,9 @@ final class Conflicts {
 		'wishlist'  => [ 'yith-woocommerce-wishlist', 'yith-woocommerce-wishlist-premium', 'ti-woocommerce-wishlist', 'ti-woocommerce-wishlist-premium' ],
 		'security'  => [ 'wordfence', 'better-wp-security', 'all-in-one-wp-security-and-firewall' ],
 		'login'     => [ 'limit-login-attempts-reloaded', 'loginizer', 'wps-limit-login', 'login-lockdown', 'wp-cerber' ],
+		// Our own choice, `two-factor`, is never a conflict. Slugs verified on wordpress.org (2026-11).
+		'twofactor' => [ 'wp-2fa', 'two-factor-authentication', 'miniorange-2-factor-authentication', 'google-authenticator', 'rublon' ],
+		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
 	/**
@@ -174,6 +178,36 @@ final class Conflicts {
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-2fa-plugin',
+				'title'    => static fn(): string => __( 'Активний другий плагін двофакторної автентифікації поряд із «Two Factor»', 'vextra-core' ),
+				'module'   => 'security',
+				'detector' => fn() => $this->module_active( 'security' ) ? $this->detect_plugins( self::PLUGINS['twofactor'] ) : false,
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Залиште один плагін 2FA (підтримуваний: «Two Factor»): два плагіни борються за хуки authenticate / wp_login.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-turnstile-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін капчі / Turnstile поряд із вбудованою перевіркою vextra-core', 'vextra-core' ),
+				'module'   => 'security',
+				'detector' => fn() => $this->module_active( 'security' ) ? $this->detect_plugins( self::PLUGINS['turnstile'] ) : false,
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Вимкніть капчу на формах входу в іншому плагіні або деактивуйте його: інакше на формі буде два віджети.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'staff-without-2fa',
+				'title'    => static fn(): string => __( 'ЗАПУСК ЗАБЛОКОВАНО: персонал без двофакторної автентифікації', 'vextra-core' ),
+				'module'   => 'security',
+				'detector' => fn() => $this->detect_staff_without_two_factor(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Активуйте плагін «Two Factor» і налаштуйте TOTP + резервні коди кожному користувачу з правами керування (профіль → Two-Factor Options). Обов’язково до запуску.', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
 				'id'       => 'author-archives-enabled',
@@ -368,6 +402,25 @@ final class Conflicts {
 		}
 		$value = $rank->setting( 'general.redirections_post_redirect', 'off' );
 		return true === $value || in_array( (string) $value, [ 'on', '1', 'yes' ], true );
+	}
+
+	/**
+	 * Staff 2FA launch gate: Two Factor is not active, or staff accounts have no second factor (detail = logins).
+	 *
+	 * @return false|string
+	 */
+	private function detect_staff_without_two_factor() {
+		if ( ! $this->module_active( 'security' ) ) {
+			return false;
+		}
+		$staff = TwoFactorPolicy::staff_without_two_factor();
+		if ( null === $staff ) {
+			return __( 'плагін «Two Factor» не активний', 'vextra-core' );
+		}
+		if ( array() === $staff ) {
+			return false;
+		}
+		return implode( ', ', array_slice( $staff, 0, 10 ) ) . ( count( $staff ) > 10 ? '…' : '' );
 	}
 
 	/**

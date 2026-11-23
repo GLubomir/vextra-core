@@ -9,142 +9,200 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-11-20T10:40:28+00:00\n"
-"PO-Revision-Date: 2026-11-20 12:00+0000\n"
+"POT-Creation-Date: 2026-11-23T08:58:59+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: vextra-core\n"
 
 #. Plugin Name of the plugin
 #: vextra-core.php
 msgid "Vextra Core"
-msgstr "Vextra Core"
+msgstr ""
 
 #. Description of the plugin
 #: vextra-core.php
 msgid "Business logic for the Vextra WooCommerce store: modules, guarded integrations, shared support code."
-msgstr "Бизнес-логика магазина Vextra на WooCommerce: модули, защищённые интеграции, общий код."
+msgstr ""
 
 #. Author of the plugin
 #: vextra-core.php
 msgid "Vextra"
-msgstr "Vextra"
-
-#: src/Admin/Notices.php:45
-msgid "vextra-core потребує WooCommerce"
-msgstr "vextra-core требует WooCommerce"
-
-#: src/Admin/Notices.php:48
-msgid "vextra-core: не знайдено vendor/autoload.php. Виконайте composer install у теці плагіна."
-msgstr "vextra-core: не найден vendor/autoload.php. Выполните composer install в папке плагина."
-
-#. translators: %s: PHP version
-#: src/Lifecycle.php:22
-#, php-format
-msgid "vextra-core потребує PHP %s або новішої версії."
-msgstr "vextra-core требует PHP %s или новее."
-
-#. translators: %s: WordPress version
-#: src/Lifecycle.php:26
-#, php-format
-msgid "vextra-core потребує WordPress %s або новішої версії."
-msgstr "vextra-core требует WordPress %s или новее."
-
-#: src/Guard/Responder.php
-msgid "Забагато запитів. Спробуйте за кілька секунд."
-msgstr ""
-
-#: src/Guard/Responder.php
-msgid "Забагато запитів"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Деактивуйте плагін, що дублює Rank Math (title, schema, sitemap, редиректи)."
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Активний інший мультимовний плагін: модуль multilang вимкнено"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Підтримуваний мультимовний плагін — Polylang. Деактивуйте конфліктний плагін, модуль увімкнеться сам."
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Активний плагін редиректів поруч із редиректами vextra-core"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Редиректи слагів і термінів веде vextra-core (через Rank Math). Перевірте, що правила не дублюються."
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Активний плагін списку бажань (власна функція планується)"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Інформаційно: після появи власного списку бажань плагін доведеться вимкнути."
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Активний плагін безпеки з лімітами запитів поруч із модулем guard"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403."
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "У Rank Math заповнено редактор robots.txt: він замінює базовий текст, у якому guard об’єднує свої правила"
-msgstr ""
-
-#: src/Compat/Conflicts.php
-msgid "Залиште в редакторі рядок «Sitemap:» або очистіть редактор (Rank Math → Загальні налаштування → Редактор robots.txt)."
 msgstr ""
 
 #. translators: %s: module id
-#: src/Admin/ConflictNotices.php
+#: src/Admin/ConflictNotices.php:48
 #, php-format
 msgid "Модуль «%s» вимкнено."
 msgstr ""
 
-#: src/Security/GenericErrors.php
+#: src/Admin/Notices.php:45
+msgid "vextra-core потребує WooCommerce"
+msgstr ""
+
+#: src/Admin/Notices.php:48
+msgid "vextra-core: не знайдено vendor/autoload.php. Виконайте composer install у теці плагіна."
+msgstr ""
+
+#: src/Compat/Conflicts.php:114
+msgid "Rank Math «Auto Post Redirect» увімкнено, а редиректи слагів веде vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php:119
+msgid "Rank Math → Загальні налаштування → Редиректи → «Auto Post Redirect» вимкнути."
+msgstr ""
+
+#: src/Compat/Conflicts.php:124
+msgid "Активний другий SEO-плагін: підтримуваний лише Rank Math"
+msgstr ""
+
+#: src/Compat/Conflicts.php:129
+msgid "Деактивуйте плагін, що дублює Rank Math (title, schema, sitemap, редиректи)."
+msgstr ""
+
+#: src/Compat/Conflicts.php:134
+msgid "Активний інший мультимовний плагін: модуль multilang вимкнено"
+msgstr ""
+
+#: src/Compat/Conflicts.php:139
+msgid "Підтримуваний мультимовний плагін — Polylang. Деактивуйте конфліктний плагін, модуль увімкнеться сам."
+msgstr ""
+
+#: src/Compat/Conflicts.php:144
+msgid "Активний плагін редиректів поруч із редиректами vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php:149
+msgid "Редиректи слагів і термінів веде vextra-core (через Rank Math). Перевірте, що правила не дублюються."
+msgstr ""
+
+#: src/Compat/Conflicts.php:154
+msgid "Активний плагін списку бажань (власна функція планується)"
+msgstr ""
+
+#: src/Compat/Conflicts.php:159
+msgid "Інформаційно: після появи власного списку бажань плагін доведеться вимкнути."
+msgstr ""
+
+#: src/Compat/Conflicts.php:164
+msgid "Активний плагін безпеки з лімітами запитів поруч із модулем guard"
+msgstr ""
+
+#: src/Compat/Conflicts.php:169
+msgid "Вимкніть у плагіні безпеки ліміти запитів і правила robots.txt, щоб не подвоювати 429/403."
+msgstr ""
+
+#: src/Compat/Conflicts.php:174
+msgid "Активний плагін захисту входу поряд із модулем security (ліміти спроб входу, XML-RPC, версії)"
+msgstr ""
+
+#: src/Compat/Conflicts.php:179
+msgid "Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу."
+msgstr ""
+
+#: src/Compat/Conflicts.php:184
+msgid "Активний другий плагін двофакторної автентифікації поряд із «Two Factor»"
+msgstr ""
+
+#: src/Compat/Conflicts.php:189
+msgid "Залиште один плагін 2FA (підтримуваний: «Two Factor»): два плагіни борються за хуки authenticate / wp_login."
+msgstr ""
+
+#: src/Compat/Conflicts.php:194
+msgid "Активний плагін капчі / Turnstile поряд із вбудованою перевіркою vextra-core"
+msgstr ""
+
+#: src/Compat/Conflicts.php:199
+msgid "Вимкніть капчу на формах входу в іншому плагіні або деактивуйте його: інакше на формі буде два віджети."
+msgstr ""
+
+#: src/Compat/Conflicts.php:204
+msgid "ЗАПУСК ЗАБЛОКОВАНО: персонал без двофакторної автентифікації"
+msgstr ""
+
+#: src/Compat/Conflicts.php:209
+msgid "Активуйте плагін «Two Factor» і налаштуйте TOTP + резервні коди кожному користувачу з правами керування (профіль → Two-Factor Options). Обов’язково до запуску."
+msgstr ""
+
+#: src/Compat/Conflicts.php:214
+msgid "У Rank Math не вимкнено архіви авторів: логін автора може потрапити в індекс"
+msgstr ""
+
+#: src/Compat/Conflicts.php:219
+msgid "Rank Math → Заголовки та мета → Автори → «Вимкнути архіви авторів» увімкнути."
+msgstr ""
+
+#: src/Compat/Conflicts.php:224
+msgid "У Rank Math заповнено редактор robots.txt: він замінює базовий текст, у якому guard об’єднує свої правила"
+msgstr ""
+
+#: src/Compat/Conflicts.php:229
+msgid "Залиште в редакторі рядок «Sitemap:» або очистіть редактор (Rank Math → Загальні налаштування → Редактор robots.txt)."
+msgstr ""
+
+#: src/Compat/Conflicts.php:418
+msgid "плагін «Two Factor» не активний"
+msgstr ""
+
+#: src/Guard/Responder.php:56
+msgid "Забагато запитів. Спробуйте за кілька секунд."
+msgstr ""
+
+#: src/Guard/Responder.php:57
+msgid "Забагато запитів"
+msgstr ""
+
+#: src/Integrations/Turnstile/Turnstile.php:91
+msgid "Увімкніть JavaScript, щоб пройти перевірку «я не робот»."
+msgstr ""
+
+#. translators: %s: PHP version
+#: src/Lifecycle.php:25
+#, php-format
+msgid "vextra-core потребує PHP %s або новішої версії."
+msgstr ""
+
+#. translators: %s: WordPress version
+#: src/Lifecycle.php:29
+#, php-format
+msgid "vextra-core потребує WordPress %s або новішої версії."
+msgstr ""
+
+#: src/Security/AppPasswords.php:72
+#: src/Security/GenericErrors.php:74
+#: src/Security/OwnerBotRole.php:223
 msgid "Невірний логін або пароль."
 msgstr ""
 
 #. translators: %d: minutes until the next attempt is allowed.
-#: src/Security/LoginThrottle.php
+#: src/Security/LoginThrottle.php:274
 #, php-format
 msgid "Забагато спроб входу. Спробуйте за %d хв."
 msgstr ""
 
-#: src/Security/LostPassword.php
+#: src/Security/LostPassword.php:56
 msgid "Якщо такий обліковий запис існує, ми надіслали лист із інструкціями."
 msgstr ""
 
-#: src/Compat/Conflicts.php
-msgid "Активний плагін захисту входу поряд із модулем security (ліміти спроб входу, XML-RPC, версії)"
+#: src/Security/OwnerBotRole.php:124
+msgid "Vextra: власний агент"
 msgstr ""
 
-#: src/Compat/Conflicts.php
-msgid "Задайте VX_SECURITY_LOGIN_IP_LIMIT і VX_SECURITY_LOGIN_USER_LIMIT = 0 у wp-config.php або вимкніть інший плагін, щоб не подвоювати блокування входу."
+#: src/Security/TurnstileForms.php:206
+msgid "Підтвердіть, що ви не робот і спробуйте ще раз."
 msgstr ""
 
-#: src/Compat/Conflicts.php
-msgid "У Rank Math не вимкнено архіви авторів: логін автора може потрапити в індекс"
+#: src/Security/TwoFactorPolicy.php:101
+msgid "Двофакторну автентифікацію персоналу не увімкнено: активуйте плагін «Two Factor» (Плагіни)."
 msgstr ""
 
-#: src/Compat/Conflicts.php
-msgid "Rank Math → Заголовки та мета → Автори → «Вимкнути архіви авторів» увімкнути."
+#: src/Security/TwoFactorPolicy.php:107
+msgid "Ваш обліковий запис керування магазином ще не захищений двофакторною автентифікацією. Налаштуйте додаток-автентифікатор (TOTP) та резервні коди у своєму профілі."
+msgstr ""
+
+#: src/Security/TwoFactorPolicy.php:108
+msgid "Налаштувати зараз"
+msgstr ""
+
+#: src/Security/TwoFactorPolicy.php:116
+msgid "Приховати до наступного входу"
 msgstr ""

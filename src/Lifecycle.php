@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Vextra\Core;
 
 use Vextra\Core\Guard\DraftOrders;
+use Vextra\Core\Security\OwnerBotRole;
 
 final class Lifecycle {
 
@@ -30,6 +31,7 @@ final class Lifecycle {
 
 		update_option( 'vextra_core_version', VEXTRA_CORE_VERSION, false );
 		DraftOrders::ensure_scheduled();
+		OwnerBotRole::ensure(); // Deactivation keeps the role.
 	}
 
 	/**
