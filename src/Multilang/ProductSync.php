@@ -12,7 +12,7 @@
  *
  * Loop guard: a static flag around every twin write plus meta `_vx_ml_sync_hash` (hash of the source snapshot, stored on
  * every product of the group). A save that changed nothing exits early; a twin already equal is not saved at all, so its
- * `post_modified` stays untouched. Variations are out of scope: variable products skip price/stock fields.
+ * `post_modified` stays untouched. Variable parents skip price/stock fields; variation stock is mirrored by StockSync.
  *
  * @package Vextra\Core
  */
@@ -70,25 +70,11 @@ final class ProductSync {
 	private static bool $running = false;
 
 	/**
-	 * Variable-product warning already logged in this request.
-	 *
-	 * @var bool
-	 */
-	private static bool $warned = false;
-
-	/**
 	 * Polylang adapter.
 	 *
 	 * @var Polylang
 	 */
 	private Polylang $polylang;
-
-	/**
-	 * Align the stock quantity in this run (forced alignment only).
-	 *
-	 * @var bool
-	 */
-	private bool $sync_quantity = false;
 
 	public function __construct( Polylang $polylang ) {
 		$this->polylang = $polylang;
@@ -217,9 +203,7 @@ final class ProductSync {
 	 * @return array<int,string[]> Twin ID => changed field keys (empty array when already aligned).
 	 */
 	public function sync_from( \WC_Product $source, bool $force, bool $dry ): array {
-		// Forced runs (CLI, fresh twin) also align the quantity once; normal saves never write it.
-		$this->sync_quantity = $force;
-		$group               = $this->polylang->translations( $source->get_id() );
+		$group = $this->polylang->translations( $source->get_id() );
 		unset( $group[ $this->polylang->post_language( $source->get_id() ) ] );
 		$twin_ids = array_values( array_diff( $group, [ $source->get_id() ] ) );
 		if ( array() === $twin_ids ) {
@@ -228,13 +212,9 @@ final class ProductSync {
 
 		$want = $this->snapshot( $source );
 		$hash = md5( (string) wp_json_encode( $want ) );
-		if ( ! $force && $hash === (string) $source->get_meta( self::HASH_META, true, 'edit' ) ) {
+		// Quantity is not part of the hash: a managed source is always compared (unless an order path owns the delta).
+		if ( ! $force && ! $this->mirrors_quantity( $source ) && $hash === (string) $source->get_meta( self::HASH_META, true, 'edit' ) ) {
 			return [];
-		}
-
-		if ( $source->is_type( 'variable' ) && ! self::$warned ) {
-			self::$warned = true;
-			Log::warning( 'Variable product: variations are not synced between translations.', [ 'product' => $source->get_id() ], 'multilang' );
 		}
 
 		$report = [];
@@ -247,7 +227,7 @@ final class ProductSync {
 					}
 					$report[ $twin_id ] = $this->align( $source, $want, $twin, $hash, $dry );
 				}
-				if ( ! $dry ) {
+				if ( ! $dry && $hash !== (string) $source->get_meta( self::HASH_META, true, 'edit' ) ) {
 					$source->update_meta_data( self::HASH_META, $hash );
 					$source->save_meta_data();
 				}
@@ -318,10 +298,17 @@ final class ProductSync {
 			}
 		}
 
-		if ( $this->sync_quantity && $source->get_manage_stock( 'edit' ) && $twin->get_manage_stock( 'edit' ) && $source->get_stock_quantity( 'edit' ) !== $twin->get_stock_quantity( 'edit' ) ) {
-			$changed[] = 'stock_quantity';
-			if ( ! $dry ) {
-				$twin->set_stock_quantity( $source->get_stock_quantity( 'edit' ) );
+		// Stock quantity + derived status mirror in the same pass (one save per twin). A twin that flips to managed gets the
+		// quantity here, not only when it was already managed. Order paths (pending delta) are moved by StockSync instead.
+		if ( $this->mirrors_quantity( $source ) ) {
+			$want_qty = $source->get_stock_quantity( 'edit' );
+			if ( self::quantity_differs( $want_qty, $twin->get_stock_quantity( 'edit' ) ) ) {
+				$changed[] = 'stock_quantity';
+				if ( ! $dry ) {
+					$twin->set_stock_quantity( $want_qty ?? 0 );
+				}
+			} elseif ( ! in_array( 'manage_stock', $changed, true ) && $twin->get_manage_stock( 'edit' ) && $twin->get_stock_status( 'edit' ) !== $source->get_stock_status( 'edit' ) ) {
+				$changed[] = 'stock_status'; // Derived by Woo from quantity/backorders on save.
 			}
 		}
 
@@ -337,11 +324,14 @@ final class ProductSync {
 			return $changed;
 		}
 
-		$twin->update_meta_data( self::HASH_META, $hash );
 		if ( array() === $changed ) {
-			$twin->save_meta_data();
+			if ( $hash !== (string) $twin->get_meta( self::HASH_META, true, 'edit' ) ) {
+				$twin->update_meta_data( self::HASH_META, $hash );
+				$twin->save_meta_data();
+			}
 			return $changed;
 		}
+		$twin->update_meta_data( self::HASH_META, $hash );
 
 		try {
 			$twin->save();
@@ -359,6 +349,25 @@ final class ProductSync {
 	}
 
 	/**
+	 * Should the quantity be mirrored from this source now (managed simple product, no atomic order delta pending for it).
+	 *
+	 * @param \WC_Product $source Source.
+	 */
+	private function mirrors_quantity( \WC_Product $source ): bool {
+		return ! $source->is_type( 'variable' ) && (bool) $source->get_manage_stock( 'edit' ) && ! StockSync::has_pending( $source->get_id() );
+	}
+
+	/**
+	 * Quantities differ (float compare; an empty managed quantity equals 0, as Woo treats it).
+	 *
+	 * @param mixed $a First.
+	 * @param mixed $b Second.
+	 */
+	public static function quantity_differs( $a, $b ): bool {
+		return (float) ( $a ?? 0 ) !== (float) ( $b ?? 0 );
+	}
+
+	/**
 	 * Field keys applicable to the product type.
 	 *
 	 * @param \WC_Product $product Product.
@@ -366,7 +375,7 @@ final class ProductSync {
 	 */
 	private function keys_for( \WC_Product $product ): array {
 		$keys = $product->is_type( 'variable' ) ? array_values( array_diff( self::FIELDS, self::VARIABLE_SKIP ) ) : self::FIELDS;
-		// Quantity is never a synced field (StockSync moves it as an atomic delta). With managed stock the status derives from it.
+		// Quantity is mirrored in align() (not a snapshot key). With managed stock the status derives from it.
 		if ( $product->get_manage_stock( 'edit' ) ) {
 			$keys = array_values( array_diff( $keys, [ 'stock_status' ] ) );
 		}

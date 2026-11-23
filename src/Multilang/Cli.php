@@ -43,9 +43,17 @@ final class Cli {
 	 */
 	private ProductSync $sync;
 
-	public function __construct( Polylang $polylang, ProductSync $sync ) {
+	/**
+	 * Stock sync service.
+	 *
+	 * @var StockSync
+	 */
+	private StockSync $stock;
+
+	public function __construct( Polylang $polylang, ProductSync $sync, StockSync $stock ) {
 		$this->polylang = $polylang;
 		$this->sync     = $sync;
+		$this->stock    = $stock;
 	}
 
 	public function register(): void {
@@ -85,6 +93,165 @@ final class Cli {
 				],
 			]
 		);
+		\WP_CLI::add_command(
+			'vextra multilang stock-audit',
+			[ $this, 'stock_audit' ],
+			[
+				'shortdesc' => 'List stock mismatches between translation twins (read-only); --fix repairs them from the default-language product.',
+				'synopsis'  => [
+					[
+						'type'        => 'flag',
+						'name'        => 'fix',
+						'description' => 'Repair the twins (default-language product wins).',
+						'optional'    => true,
+					],
+					[
+						'type'        => 'assoc',
+						'name'        => 'format',
+						'description' => 'table (default) or json.',
+						'optional'    => true,
+						'options'     => [ 'table', 'json' ],
+					],
+					[
+						'type'        => 'assoc',
+						'name'        => 'ids',
+						'description' => 'Comma-separated default-language product IDs (default: all).',
+						'optional'    => true,
+					],
+				],
+			]
+		);
+	}
+
+	/**
+	 * Default-language product IDs (all, or the given list).
+	 *
+	 * @param array<string,string> $assoc Assoc args.
+	 * @return int[]
+	 */
+	private function source_ids( array $assoc ): array {
+		$default = $this->polylang->default_language();
+		if ( '' === $default ) {
+			\WP_CLI::error( 'Polylang default language is unknown.' );
+		}
+		if ( ! empty( $assoc['ids'] ) ) {
+			return array_values( array_filter( array_map( 'absint', explode( ',', (string) $assoc['ids'] ) ) ) );
+		}
+		$ids      = [];
+		$page     = 1;
+		$per_page = 100;
+		$fetched  = $per_page;
+		while ( $fetched === $per_page ) {
+			$batch   = get_posts(
+				[
+					'post_type'        => 'product',
+					'post_status'      => [ 'publish', 'draft', 'pending', 'private' ],
+					'lang'             => $default,
+					'fields'           => 'ids',
+					'posts_per_page'   => $per_page,
+					'paged'            => $page,
+					'orderby'          => 'ID',
+					'order'            => 'ASC',
+					'no_found_rows'    => true,
+					'suppress_filters' => false,
+				]
+			);
+			$ids     = array_merge( $ids, $batch );
+			$fetched = count( $batch );
+			++$page;
+		}
+		return $ids;
+	}
+
+	/**
+	 * Load default-language products in batches.
+	 *
+	 * @param int[] $ids Product IDs.
+	 * @return \Generator<int,\WC_Product>
+	 */
+	private function products( array $ids ): \Generator {
+		foreach ( array_chunk( $ids, 50 ) as $batch ) {
+			$products = wc_get_products(
+				[
+					'include' => $batch,
+					'limit'   => 50,
+					'status'  => [ 'publish', 'draft', 'pending', 'private' ],
+					'orderby' => 'none',
+				]
+			);
+			foreach ( $products as $product ) {
+				yield $product;
+			}
+		}
+	}
+
+	/**
+	 * Audit the stock fields of the groups.
+	 *
+	 * @param int[] $ids Default-language product IDs.
+	 * @return array<int,array{product:int,twin:int,lang:string,field:string,source:string,value:string}>
+	 */
+	private function audit_ids( array $ids ): array {
+		$rows = [];
+		foreach ( $this->products( $ids ) as $product ) {
+			$rows = array_merge( $rows, $this->stock->audit( $product ) );
+		}
+		return $rows;
+	}
+
+	/**
+	 * Command: stock-audit.
+	 *
+	 * @param array<int,string>    $args  Positional args (unused).
+	 * @param array<string,string> $assoc Assoc args / flags.
+	 */
+	public function stock_audit( array $args, array $assoc ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$fix    = ! empty( $assoc['fix'] );
+		$format = 'json' === ( $assoc['format'] ?? 'table' ) ? 'json' : 'table';
+		$ids    = $this->source_ids( $assoc );
+		$fields = [ 'product', 'twin', 'lang', 'field', 'source', 'value' ];
+
+		$rows = $this->audit_ids( $ids );
+		if ( array() === $rows ) {
+			if ( 'json' === $format ) {
+				\WP_CLI::line( '[]' );
+			}
+			\WP_CLI::success( 'No stock mismatches.' );
+			return;
+		}
+		\WP_CLI\Utils\format_items( $format, $rows, $fields );
+		if ( ! $fix ) {
+			\WP_CLI::halt( 1 );
+		}
+
+		foreach ( $this->products( $ids ) as $product ) {
+			if ( $this->has_row( $rows, $product ) ) {
+				$this->stock->repair( $product, $this->sync );
+			}
+		}
+
+		$after = $this->audit_ids( $ids );
+		if ( array() !== $after ) {
+			\WP_CLI\Utils\format_items( $format, $after, $fields );
+			\WP_CLI::error( sprintf( '%d mismatches remain after --fix.', count( $after ) ) );
+		}
+		\WP_CLI::success( sprintf( 'Repaired %d mismatched rows; now 0.', count( $rows ) ) );
+	}
+
+	/**
+	 * Does the audit list mention this product group (source product or one of its variations).
+	 *
+	 * @param array<int,array{product:int,twin:int,lang:string,field:string,source:string,value:string}> $rows    Rows.
+	 * @param \WC_Product                                                                                $product Source product.
+	 */
+	private function has_row( array $rows, \WC_Product $product ): bool {
+		$ids = array_merge( [ $product->get_id() ], $this->stock->children( $product->get_id() ) );
+		foreach ( $rows as $row ) {
+			if ( in_array( $row['product'], $ids, true ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
