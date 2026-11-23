@@ -3,8 +3,11 @@
  * Fixed-window per-subject counter. Storage: external object cache when present (no database write per request),
  * otherwise a short-lived transient (`vx_guard_*`, expires with the window).
  *
- * The counter is read-modify-write, not atomic: a burst of parallel requests may overshoot the limit by a few
- * hits. That is acceptable for abuse throttling; it never blocks a legitimate user earlier than the limit.
+ * Atomicity (SEC-045): with a persistent object cache the counter is a separate entry advanced by `wp_cache_incr()` after an
+ * `wp_cache_add()` (add-then-increment: Redis INCR / Memcached incr are atomic, so a parallel burst cannot overshoot the limit by
+ * more than the requests already in flight). Without a persistent cache the counter is a transient read-modify-write: a
+ * burst of parallel requests may overshoot the limit by a few hits (best effort, accepted for abuse throttling). It never
+ * blocks a legitimate user earlier than the limit.
  *
  * @package Vextra\Core
  */
@@ -35,8 +38,14 @@ final class RateLimiter {
 			];
 		}
 
-		$now   = time();
-		$key   = $bucket . ':' . md5( $subject );
+		$now = time();
+		$key = $bucket . ':' . md5( $subject );
+		if ( wp_using_ext_object_cache() ) {
+			$atomic = self::hit_atomic( $key, $limit, $window, $now );
+			if ( null !== $atomic ) {
+				return $atomic;
+			}
+		}
 		$state = self::read( $key );
 
 		if ( ! is_array( $state ) || ! isset( $state[0], $state[1] ) || (int) $state[1] <= $now ) {
@@ -54,6 +63,38 @@ final class RateLimiter {
 	}
 
 	/**
+	 * Add-then-increment counter on a persistent object cache. Null = the backend refused (caller uses the legacy path).
+	 *
+	 * @param string $key    Entry key.
+	 * @param int    $limit  Hits per window.
+	 * @param int    $window Window seconds.
+	 * @param int    $now    Current timestamp.
+	 * @return array{allowed:bool,retry_after:int,remaining:int}|null
+	 */
+	private static function hit_atomic( string $key, int $limit, int $window, int $now ): ?array {
+		$end = wp_cache_get( $key . ':e', self::GROUP );
+		if ( is_numeric( $end ) && (int) $end <= $now ) {
+			// Window over but the counter outlived it by a tick: start a new one.
+			wp_cache_delete( $key . ':e', self::GROUP );
+			wp_cache_delete( $key . ':n', self::GROUP );
+		}
+		wp_cache_add( $key . ':e', $now + $window, self::GROUP, $window );
+		wp_cache_add( $key . ':n', 0, self::GROUP, $window );
+		$count = wp_cache_incr( $key . ':n', 1, self::GROUP );
+		if ( false === $count ) {
+			return null;
+		}
+		$end     = wp_cache_get( $key . ':e', self::GROUP );
+		$left    = is_numeric( $end ) ? max( 1, (int) $end - $now ) : $window;
+		$allowed = (int) $count <= $limit;
+		return [
+			'allowed'     => $allowed,
+			'retry_after' => $allowed ? 0 : $left,
+			'remaining'   => max( 0, $limit - (int) $count ),
+		];
+	}
+
+	/**
 	 * Read a bucket without counting a hit (lock checks, status output).
 	 *
 	 * @param string $bucket  Bucket name.
@@ -62,8 +103,14 @@ final class RateLimiter {
 	 * @return array{count:int,remaining:int,retry_after:int} `retry_after` is the seconds left in the window (0 when no window is open).
 	 */
 	public static function peek( string $bucket, string $subject, int $limit ): array {
-		$state = self::read( $bucket . ':' . md5( $subject ) );
+		$key   = $bucket . ':' . md5( $subject );
+		$state = self::read( $key );
 		$now   = time();
+		if ( wp_using_ext_object_cache() && ! is_array( $state ) ) {
+			$count = wp_cache_get( $key . ':n', self::GROUP );
+			$end   = wp_cache_get( $key . ':e', self::GROUP );
+			$state = is_numeric( $count ) && is_numeric( $end ) ? [ (int) $count, (int) $end ] : null;
+		}
 		if ( $limit <= 0 || ! is_array( $state ) || ! isset( $state[0], $state[1] ) || (int) $state[1] <= $now ) {
 			return [
 				'count'       => 0,
@@ -88,6 +135,8 @@ final class RateLimiter {
 		$key = $bucket . ':' . md5( $subject );
 		if ( wp_using_ext_object_cache() ) {
 			wp_cache_delete( $key, self::GROUP );
+			wp_cache_delete( $key . ':n', self::GROUP );
+			wp_cache_delete( $key . ':e', self::GROUP );
 			return;
 		}
 		delete_transient( self::transient_name( $key ) );

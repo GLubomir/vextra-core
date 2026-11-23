@@ -1,15 +1,23 @@
 <?php
 /**
- * Lost-password flow without an account-existence oracle (SEC-007) + its throttles.
+ * Lost-password flow without an account-existence oracle (SEC-007, SEC-041, SEC-042) + its throttles.
  *
  * Core path (wp-login.php, `retrieve_password()`): `lostpassword_user_data` hands core a placeholder user for an unknown login / e-mail,
  * `lostpassword_errors` drops core's `invalid_email` error, core's `invalidcombo` is never reached, and
- * `send_retrieve_password_email` (false for the placeholder, an account that may not reset, or a per-account limit hit) ends the
- * request exactly like a successful one: same redirect `?checkemail=confirm`, same neutral text.
+ * `send_retrieve_password_email` is ALWAYS false for the request thread: core ends the request exactly like a successful one
+ * (same redirect `?checkemail=confirm`, same neutral text) whatever happens to the mail.
+ * Known account: the whole mail work (reset key + `wp_mail`) is one Action Scheduler async action (hook `vextra/security/send_reset_mail`,
+ * group `vextra-security`, args = [ user ID ] only: the key is generated inside the job and never stored in the AS table), so
+ * known and unknown logins cost the request thread the same and a mail failure has no user-visible effect (hashed log line,
+ * one retry after 5 minutes). Without Action Scheduler the mail is sent synchronously and a failure is swallowed.
  * Woo path (`/my-account/lost-password/`): Woo has no hook between "user not found" and its error notice, so `wp_loaded` priority 15
- * (before Woo's handler at 20) answers unknown / not-allowed / limited requests with Woo's own success redirect; known requests
- * fall through to Woo untouched (it sends the mail).
- * Buckets: per IP (`reset_ip_*`, 429 + Retry-After) and per account (`reset_user_*`, silently no mail, neutral page).
+ * (before Woo's handler at 20) answers every request itself with Woo's own success redirect and queues job
+ * `vextra/security/send_reset_mail_woo` (Woo's own mail template) for a known account, AFTER the form validators (Turnstile) ran, so
+ * an unverified request never spends a quota (SEC-052). Without Action Scheduler the same handler sends synchronously.
+ * A request for an account whose job is still pending queues nothing and does not count against the ceiling; IPs the account
+ * signed in from are exempt from the ceiling (SEC-053).
+ * Buckets: per IP (`reset_ip_*`, 429 + Retry-After); per (account, IP) pair (`reset_user_limit`) and per account across all IPs
+ * (`reset_user_global_limit`), both silently "no job, neutral page" (SEC-043: an attacker cannot burn the owner's quota).
  *
  * @package Vextra\Core
  */
@@ -24,8 +32,20 @@ use Vextra\Core\Guard\RateLimiter;
 use Vextra\Core\Guard\Request;
 use Vextra\Core\Guard\Responder;
 use Vextra\Core\Plugin;
+use Vextra\Core\Support\Log;
 
 final class LostPassword {
+
+	public const JOB_CORE = 'vextra/security/send_reset_mail';
+	public const JOB_WOO  = 'vextra/security/send_reset_mail_woo';
+	public const GROUP    = 'vextra-security';
+
+	/**
+	 * A reset mail job is running in this request (form validators such as Turnstile must stand aside).
+	 *
+	 * @var bool
+	 */
+	private static bool $job = false;
 
 	/**
 	 * Placeholder handed to core for an unknown login (ID 0).
@@ -34,7 +54,23 @@ final class LostPassword {
 	 */
 	private ?\WP_User $placeholder = null;
 
+	/**
+	 * Is a queued reset mail being sent right now.
+	 */
+	public static function in_job(): bool {
+		return self::$job;
+	}
+
+	/**
+	 * Job handlers (registered under WP-CLI too, where Action Scheduler runs queued actions).
+	 */
+	public function register_jobs(): void {
+		add_action( self::JOB_CORE, [ $this, 'job_core' ], 10, 1 );
+		add_action( self::JOB_WOO, [ $this, 'job_woo' ], 10, 1 );
+	}
+
 	public function register(): void {
+		$this->register_jobs();
 		add_filter( 'lostpassword_user_data', [ $this, 'placeholder_user' ], 99, 2 );
 		add_filter( 'lostpassword_errors', [ $this, 'strip_oracle' ], 99, 2 );
 		add_filter( 'send_retrieve_password_email', [ $this, 'gate_mail' ], 99, 3 );
@@ -86,22 +122,26 @@ final class LostPassword {
 	}
 
 	/**
-	 * `send_retrieve_password_email`: mail only for a real account that may reset and is inside its limit.
+	 * `send_retrieve_password_email`: core never sends from the request thread. A real account that may reset and is inside its
+	 * quotas gets a background job instead; unknown / forbidden / limited requests do the same bookkeeping and queue nothing.
 	 *
-	 * @param mixed $send      Core default (true).
+	 * @param mixed $send       Core default (true).
 	 * @param mixed $user_login Login as typed.
-	 * @param mixed $user_data WP_User.
+	 * @param mixed $user_data  WP_User.
 	 * @return mixed
 	 */
 	public function gate_mail( $send, $user_login = '', $user_data = null ) {
-		unset( $user_login );
-		if ( ! $send ) {
-			return $send;
+		if ( ! $send || self::$job ) {
+			return $send; // Our own job calls retrieve_password(): that call goes through.
 		}
-		if ( ! $user_data instanceof \WP_User || 0 === (int) $user_data->ID || ! wp_is_password_reset_allowed_for_user( $user_data ) ) {
-			return false;
+		$real  = $user_data instanceof \WP_User && (int) $user_data->ID > 0;
+		$ident = $real ? 'u' . (int) $user_data->ID : Store::identity( is_string( $user_login ) ? $user_login : '' );
+		$ok    = (bool) Failsafe::run( 'lostpassword-quota', fn(): bool => $this->quota( $ident, $real ? $user_data : null ), true );
+		if ( $real && $ok && wp_is_password_reset_allowed_for_user( $user_data ) ) {
+			$id = (int) $user_data->ID;
+			Failsafe::run( 'lostpassword-queue', fn() => $this->dispatch( $id, self::JOB_CORE ) );
 		}
-		return Failsafe::run( 'lostpassword-user-limit', fn(): bool => $this->account_allowed( (int) $user_data->ID ), true );
+		return false;
 	}
 
 	/**
@@ -177,14 +217,8 @@ final class LostPassword {
 			$user = get_user_by( 'email', $login );
 		}
 
-		$neutral = ! $user instanceof \WP_User
-			|| ! wp_is_password_reset_allowed_for_user( $user )
-			|| ! Failsafe::run( 'lostpassword-user-limit-woo', fn(): bool => $this->account_allowed( (int) $user->ID ), true );
-		if ( ! $neutral ) {
-			return; // Real account inside its limit: Woo sends the mail.
-		}
-
-		// Plugins that validate the form (captcha, 2FA) still run, like for a real account.
+		// Plugins that validate the form (captcha, Turnstile, 2FA) run FIRST, like on wp-login.php: a request that did not pass
+		// them must never spend a reset quota (SEC-052).
 		$errors = new \WP_Error();
 		do_action( 'lostpassword_post', $errors, $user instanceof \WP_User ? $user : false );
 		if ( $errors->get_error_code() ) {
@@ -193,8 +227,130 @@ final class LostPassword {
 			return;
 		}
 
+		$ident = $user instanceof \WP_User ? 'u' . (int) $user->ID : Store::identity( $login );
+		$ok    = (bool) Failsafe::run( 'lostpassword-quota-woo', fn(): bool => $this->quota( $ident, $user instanceof \WP_User ? $user : null ), true );
+		$send  = $user instanceof \WP_User && $ok && wp_is_password_reset_allowed_for_user( $user );
+		if ( $send && $user instanceof \WP_User ) {
+			$id = (int) $user->ID;
+			Failsafe::run( 'lostpassword-queue-woo', fn() => $this->dispatch( $id, self::JOB_WOO ) );
+		}
 		wp_safe_redirect( add_query_arg( 'reset-link-sent', 'true', wc_get_account_endpoint_url( 'lost-password' ) ) );
 		exit;
+	}
+
+	/**
+	 * Job `vextra/security/send_reset_mail`: wp-login.php style mail.
+	 *
+	 * @param mixed $user_id User ID (the only argument).
+	 */
+	public function job_core( $user_id = 0 ): void {
+		$this->run_job( is_numeric( $user_id ) ? (int) $user_id : 0, self::JOB_CORE );
+	}
+
+	/**
+	 * Job `vextra/security/send_reset_mail_woo`: WooCommerce mail template.
+	 *
+	 * @param mixed $user_id User ID (the only argument).
+	 */
+	public function job_woo( $user_id = 0 ): void {
+		$this->run_job( is_numeric( $user_id ) ? (int) $user_id : 0, self::JOB_WOO );
+	}
+
+	/**
+	 * `retrieve_password_message` (job only): core would print the address of the background request ("originated from the IP
+	 * address ..."), which is the server itself and misleading: drop that sentence.
+	 *
+	 * @param mixed $message Mail body.
+	 * @return mixed
+	 */
+	public function strip_requester_ip( $message ) {
+		if ( ! is_string( $message ) ) {
+			return $message;
+		}
+		$addr = isset( $_SERVER['REMOTE_ADDR'] ) && is_string( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+		if ( '' === $addr ) {
+			return $message;
+		}
+		/* translators: %s: IP address of password reset requester. */
+		$line = sprintf( __( 'This password reset request originated from the IP address %s.' ), $addr ); // phpcs:ignore WordPress.WP.I18n.MissingArgDomain -- core's own string, translated by core's domain.
+		return str_replace( $line . "\r\n", '', $message );
+	}
+
+	/**
+	 * Queue the mail, or send it right now without Action Scheduler. Never throws, never reports the outcome to the visitor.
+	 *
+	 * @param int    $user_id Account.
+	 * @param string $hook    Job hook.
+	 */
+	private function dispatch( int $user_id, string $hook ): void {
+		if ( function_exists( 'as_enqueue_async_action' ) && (int) as_enqueue_async_action( $hook, [ $user_id ], self::GROUP ) > 0 ) {
+			return;
+		}
+		$this->run_job( $user_id, $hook, false );
+	}
+
+	/**
+	 * Generate the reset key and send the mail. A failure is logged once (hashed) and retried once after 5 minutes.
+	 *
+	 * @param int    $user_id Account.
+	 * @param string $hook    Job hook (selects the mail template).
+	 * @param bool   $retry   Allow the single retry.
+	 */
+	private function run_job( int $user_id, string $hook, bool $retry = true ): void {
+		$user = $user_id > 0 ? get_userdata( $user_id ) : false;
+		if ( ! $user instanceof \WP_User ) {
+			return;
+		}
+		$failed  = false;
+		$capture = static function () use ( &$failed ): void {
+			$failed = true;
+		};
+
+		self::$job = true;
+		add_action( 'wp_mail_failed', $capture );
+		add_filter( 'retrieve_password_message', [ $this, 'strip_requester_ip' ], 99, 1 );
+		try {
+			if ( self::JOB_WOO === $hook ) {
+				$failed = ! $this->send_woo( $user ) || $failed;
+			} else {
+				$result = retrieve_password( '' !== (string) $user->user_email ? (string) $user->user_email : (string) $user->user_login );
+				$failed = is_wp_error( $result ) || $failed;
+			}
+		} catch ( \Throwable $e ) {
+			unset( $e );
+			$failed = true;
+		} finally {
+			remove_filter( 'retrieve_password_message', [ $this, 'strip_requester_ip' ], 99 );
+			remove_action( 'wp_mail_failed', $capture );
+			self::$job = false;
+		}
+
+		if ( ! $failed ) {
+			return;
+		}
+		Log::warning( 'Reset mail not sent', [ 'account' => substr( wp_hash( 'vx-reset|' . $user_id ), 0, 12 ) ], 'security' );
+		if ( $retry && function_exists( 'as_schedule_single_action' ) && RateLimiter::hit( 'sec_reset_retry', Store::subject( 'u' . $user_id ), 1, 900 )['allowed'] ) {
+			as_schedule_single_action( time() + 300, $hook, [ $user_id ], self::GROUP );
+		}
+	}
+
+	/**
+	 * Woo flow of `WC_Shortcode_My_Account::retrieve_password()` after the validation: key + Woo mail. False = could not start.
+	 *
+	 * @param \WP_User $user Account.
+	 */
+	private function send_woo( \WP_User $user ): bool {
+		if ( ! function_exists( 'WC' ) || ! wp_is_password_reset_allowed_for_user( $user ) ) {
+			return false;
+		}
+		do_action( 'retrieve_password', $user->user_login );
+		$key = get_password_reset_key( $user );
+		if ( is_wp_error( $key ) ) {
+			return false;
+		}
+		WC()->mailer(); // Loads the email classes (they hook the notification).
+		do_action( 'woocommerce_reset_password_notification', $user->user_login, $key );
+		return true;
 	}
 
 	/**
@@ -209,15 +365,45 @@ final class LostPassword {
 	}
 
 	/**
-	 * Count a request against the per-account bucket; false when the account is over its limit (no mail, neutral page).
+	 * Is a reset mail job of this account already waiting (any template).
 	 *
-	 * @param int $user_id Account.
+	 * @param int $user_id Account (0 for an unknown login: same query, parity of the work).
 	 */
-	private function account_allowed( int $user_id ): bool {
-		$hit = RateLimiter::hit( 'sec_reset_user', Store::subject( 'u' . $user_id ), Config::get( 'reset_user_limit' ), Config::get( 'reset_user_window' ) );
-		if ( ! $hit['allowed'] ) {
+	private function pending( int $user_id ): bool {
+		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
+			return false;
+		}
+		foreach ( [ self::JOB_CORE, self::JOB_WOO ] as $hook ) {
+			if ( as_has_scheduled_action( $hook, [ $user_id ], self::GROUP ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Quotas of one request: (account, IP) pair bucket first, then the per-account ceiling. Identical work for known and unknown
+	 * logins (an unknown name is keyed by the hash of its text). False = no job (neutral page).
+	 * A job of the account that is still pending makes the request a no-op that does not count against the ceiling (SEC-053: a
+	 * second mail would only replace the first one's key); an IP the account already signed in from is exempt from the ceiling,
+	 * its pair quota still applies.
+	 *
+	 * @param string        $ident Store::identity().
+	 * @param \WP_User|null $user  Account (null = unknown login).
+	 */
+	private function quota( string $ident, ?\WP_User $user = null ): bool {
+		if ( '' === $ident ) {
+			return false;
+		}
+		$window  = Config::get( 'reset_user_window' );
+		$ok      = RateLimiter::hit( 'sec_reset_pair', Store::subject( Store::pair( $ident ) ), Config::get( 'reset_user_limit' ), $window )['allowed'];
+		$pending = $this->pending( null !== $user ? (int) $user->ID : 0 );
+		if ( $ok && ! $pending && ! Store::is_known_ip( $user ) ) {
+			$ok = RateLimiter::hit( 'sec_reset_user', Store::subject( $ident ), Config::get( 'reset_user_global_limit' ), $window )['allowed'];
+		}
+		if ( ! $ok ) {
 			Responder::log( 'reset-suppressed', 'lostpassword', 'security' );
 		}
-		return $hit['allowed'];
+		return $ok && ! $pending;
 	}
 }

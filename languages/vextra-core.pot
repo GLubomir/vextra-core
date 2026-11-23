@@ -206,3 +206,7 @@ msgstr ""
 #: src/Security/TwoFactorPolicy.php:116
 msgid "Приховати до наступного входу"
 msgstr ""
+
+#: src/Security/OwnerBotRole.php
+msgid "Ця дія недоступна для службового облікового запису."
+msgstr ""

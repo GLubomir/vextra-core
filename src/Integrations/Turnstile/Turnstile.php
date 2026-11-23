@@ -6,8 +6,13 @@
  * the filter `vextra/core/turnstile/keys` ( array{site:string,secret:string} ) may supply them for tests, constants win.
  * Without keys nothing happens: no script, no widget, no outgoing request.
  *
- * Contract used by the form wiring (Security\TurnstileForms) and, later, by the lock challenge (TASK-029c) and checkout (E6):
- * `render_widget( $action )`, `enqueue()`, `verify( $token, $ip )`.
+ * Contract used by the form wiring (Security\TurnstileForms) and, later, by checkout (E6):
+ * `render_widget( $action )`, `enqueue()`, `verify( $token, $ip, $action )`.
+ *
+ * SEC-049: a passed siteverify answer is also checked for the widget `action` (when the caller names one) and for `hostname`
+ * (host of `home_url()`, list filterable through `vextra/core/turnstile/hostnames`), so a token minted on another site or for
+ * another form is refused. The Cloudflare dummy test keys answer with hostname `example.com` and no action: those checks are
+ * skipped ONLY when `wp_get_environment_type()` is `local` AND the secret is one of the documented dummy secrets.
  *
  * Provider failure (network error, non-200, malformed JSON, `internal-error`, a rejected secret) = fail OPEN by default,
  * fail CLOSED when `VX_TURNSTILE_FAIL` is `closed`. One log line per request. The secret is never logged, printed or sent
@@ -39,6 +44,15 @@ final class Turnstile extends AbstractIntegration {
 	 * Allowed `data-action` values.
 	 */
 	public const ACTIONS = [ 'login', 'lostpassword', 'register', 'checkout' ];
+
+	/**
+	 * Documented Cloudflare testing secrets (always pass / always block / token already spent).
+	 */
+	private const DUMMY_SECRETS = [
+		'1x0000000000000000000000000000000AA',
+		'2x0000000000000000000000000000000AA',
+		'3x0000000000000000000000000000000AA',
+	];
 
 	// Not prefixed `vx-`: the theme marks every `vx-*` script as an ES module, api.js must stay a classic script.
 	private const HANDLE = 'cf-turnstile-api';
@@ -129,11 +143,12 @@ final class Turnstile extends AbstractIntegration {
 	/**
 	 * Verify a widget token with Cloudflare.
 	 *
-	 * @param string $token Value of the `cf-turnstile-response` field.
-	 * @param string $ip    Raw client IP (sent as `remoteip`).
-	 * @return array{ok:bool,reason:string} `reason`: `off`, `missing`, `invalid`, `passed`, `provider_failure`.
+	 * @param string      $token  Value of the `cf-turnstile-response` field.
+	 * @param string      $ip     Raw client IP (sent as `remoteip`).
+	 * @param string|null $action Widget action of the form being verified (null = not compared).
+	 * @return array{ok:bool,reason:string} `reason`: `off`, `missing`, `invalid`, `action`, `hostname`, `passed`, `provider_failure`.
 	 */
-	public function verify( string $token, string $ip ): array {
+	public function verify( string $token, string $ip, ?string $action = null ): array {
 		$keys = $this->keys();
 		if ( ! $this->is_available() || null === $keys ) {
 			return [
@@ -150,7 +165,7 @@ final class Turnstile extends AbstractIntegration {
 			];
 		}
 
-		$memo = hash( 'sha256', $token );
+		$memo = hash( 'sha256', $token . '|' . ( $action ?? '' ) );
 		if ( isset( self::$memo[ $memo ] ) ) {
 			return self::$memo[ $memo ];
 		}
@@ -171,7 +186,7 @@ final class Turnstile extends AbstractIntegration {
 			]
 		);
 
-		self::$memo[ $memo ] = $this->parse( $response );
+		self::$memo[ $memo ] = $this->parse( $response, $action );
 		return self::$memo[ $memo ];
 	}
 
@@ -185,10 +200,11 @@ final class Turnstile extends AbstractIntegration {
 	/**
 	 * Turn the siteverify answer into a verdict.
 	 *
-	 * @param mixed $response Return value of wp_safe_remote_post().
+	 * @param mixed       $response Return value of wp_safe_remote_post().
+	 * @param string|null $action   Expected widget action (null = not compared).
 	 * @return array{ok:bool,reason:string}
 	 */
-	private function parse( $response ): array {
+	private function parse( $response, ?string $action = null ): array {
 		if ( is_wp_error( $response ) ) {
 			return $this->provider_failure( 'transport' );
 		}
@@ -200,10 +216,7 @@ final class Turnstile extends AbstractIntegration {
 			return $this->provider_failure( 'malformed' );
 		}
 		if ( true === $data['success'] ) {
-			return [
-				'ok'     => true,
-				'reason' => 'passed',
-			];
+			return $this->check_answer( $data, $action );
 		}
 
 		$codes = isset( $data['error-codes'] ) && is_array( $data['error-codes'] ) ? array_map( 'strval', $data['error-codes'] ) : [];
@@ -215,6 +228,65 @@ final class Turnstile extends AbstractIntegration {
 			'ok'     => false,
 			'reason' => 'invalid',
 		];
+	}
+
+	/**
+	 * SEC-049: action and hostname of a successful answer.
+	 *
+	 * @param array<string,mixed> $data   Decoded siteverify answer.
+	 * @param string|null         $action Expected widget action (null = not compared).
+	 * @return array{ok:bool,reason:string}
+	 */
+	private function check_answer( array $data, ?string $action ): array {
+		$dummy = $this->uses_dummy_keys();
+		if ( null !== $action && ( isset( $data['action'] ) || ! $dummy ) && ( ! isset( $data['action'] ) || ! is_string( $data['action'] ) || $data['action'] !== $action ) ) {
+			return [
+				'ok'     => false,
+				'reason' => 'action',
+			];
+		}
+		if ( ! $dummy ) {
+			$host = isset( $data['hostname'] ) && is_string( $data['hostname'] ) ? strtolower( $data['hostname'] ) : '';
+			if ( '' === $host || ! in_array( $host, $this->hostnames(), true ) ) {
+				return [
+					'ok'     => false,
+					'reason' => 'hostname',
+				];
+			}
+		}
+		return [
+			'ok'     => true,
+			'reason' => 'passed',
+		];
+	}
+
+	/**
+	 * Hostnames a valid token may carry: the host of `home_url()` (+ the www / non-www twin) and the filter's additions.
+	 *
+	 * @return string[]
+	 */
+	private function hostnames(): array {
+		$host  = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$hosts = '' === $host ? [] : [ $host ];
+		if ( '' !== $host ) {
+			$hosts[] = str_starts_with( $host, 'www.' ) ? substr( $host, 4 ) : 'www.' . $host;
+		}
+
+		/**
+		 * Filters the hostnames accepted in a Turnstile answer (default: `home_url()` host and its www / non-www twin).
+		 *
+		 * @param string[] $hosts Lower-case host names.
+		 */
+		$filtered = apply_filters( 'vextra/core/turnstile/hostnames', $hosts );
+		return is_array( $filtered ) ? array_values( array_filter( array_map( static fn( $h ): string => is_string( $h ) ? strtolower( $h ) : '', $filtered ), 'strlen' ) ) : $hosts;
+	}
+
+	/**
+	 * Local environment AND a documented Cloudflare dummy secret (the three published `1x`/`2x`/`3x` secrets).
+	 */
+	private function uses_dummy_keys(): bool {
+		$keys = $this->keys();
+		return null !== $keys && 'local' === wp_get_environment_type() && in_array( $keys['secret'], self::DUMMY_SECRETS, true );
 	}
 
 	/**

@@ -3,14 +3,20 @@
  * Login throttling (SEC-008): wp-login.php, Woo my-account form (both go through `authenticate`) and REST Basic auth with an
  * Application Password.
  *
- * - Counters: failures per client IP and per login identity (Store::identity(): the account, or the lower-cased text of a
- *   nonexistent name, so lock behaviour does not reveal whether an account exists). Storage: Guard\RateLimiter.
+ * - Counters: failures per client IP, per (login identity, client IP) PAIR and, only without Turnstile keys, per login identity
+ *   across all IPs (Store::identity(): the account, or the lower-cased text of a nonexistent name, so lock behaviour does not
+ *   reveal whether an account exists). Storage: Guard\RateLimiter.
  * - Reaching a limit sets a progressive lock (Store): first `lock_base`, doubling per repeat inside `strike_window`, capped at
  *   `lock_max`. While locked the attempt fails at `authenticate` priority 1 before any password is checked, and a final
  *   priority-999 filter re-applies the lock so no other filter can sign a locked client in.
- * - Anti-DoS of a real user: the per-username lock does not apply to an IP that already signed in as that user (user meta
- *   `_vx_login_known_ips`, last N HMAC-hashed /64-masked IPs). The per-IP lock applies to everyone.
- * - A successful login resets the username counter only (never the IP counter).
+ * - SEC-043 model: the hard lock is per (user, IP) pair, so anonymous failures from IP A never lock the owner on IP B.
+ *   Turnstile keys set: no username-wide lock at all (029b requires a valid token on every interactive login, a username-wide
+ *   lock would only be a DoS vector). Keys not set (degraded mode): reaching `login_user_global_limit` locks the username for
+ *   unknown IPs only; an IP that already signed in as that user (user meta `_vx_login_known_ips`, last N HMAC-hashed /64-masked
+ *   IPs) passes. The per-IP lock applies to everyone.
+ * - SEC-047 / SEC-051: the owner bot has NO exemption: interactive and REST attempts for its name are counted and locked like
+ *   any other name (it is not distinguishable); the pair keys keep anonymous failures away from its own address.
+ * - A successful login resets that pair's counter and the username counter (never the IP counter).
  * Reading lock state can fail open (Failsafe); a lock that was read is always enforced.
  *
  * @package Vextra\Core
@@ -24,6 +30,8 @@ use Vextra\Core\Guard\ClientIp;
 use Vextra\Core\Guard\Failsafe;
 use Vextra\Core\Guard\RateLimiter;
 use Vextra\Core\Guard\Responder;
+use Vextra\Core\Integrations\Turnstile\Turnstile;
+use Vextra\Core\Plugin;
 
 final class LoginThrottle {
 
@@ -121,7 +129,7 @@ final class LoginThrottle {
 	}
 
 	/**
-	 * `wp_login`: remember the (hashed) IP for this account and reset its username counter.
+	 * `wp_login`: remember the (hashed) IP for this account and reset its username / pair counters.
 	 *
 	 * @param mixed $user_login Login.
 	 * @param mixed $user       WP_User.
@@ -140,6 +148,7 @@ final class LoginThrottle {
 					update_user_meta( $user->ID, self::META_KNOWN_IPS, $known );
 				}
 				RateLimiter::reset( 'sec_login_user', Store::subject( 'u' . $user->ID ) );
+				RateLimiter::reset( 'sec_login_pair', Store::subject( Store::pair( 'u' . $user->ID ) ) );
 			}
 		);
 	}
@@ -177,14 +186,14 @@ final class LoginThrottle {
 		}
 		if ( Config::get( 'login_user_limit' ) > 0 && '' !== trim( $username ) ) {
 			$user = Store::find_user( $username );
-			// SEC-043: the owner bot has no per-username lock (anonymous failures must never lock its Application Password out);
-			// only the per-IP lock applies, so the bot still works from every other address.
-			if ( ! OwnerBotRole::is_bot( $user ) ) {
-				$ident  = null !== $user ? 'u' . $user->ID : Store::identity( $username );
-				$remain = Store::lock_remaining( 'user', $ident );
-				if ( $remain > 0 && ! $this->is_known_ip( $user ) ) {
-					$retry = max( $retry, $remain );
-				}
+			// SEC-043 / SEC-047 / SEC-051: no name is special (the owner bot answers like any other name, interactive and REST).
+			// Anonymous failures lock only the attacker's own (user, IP) pair, so the bot's Application Password keeps working
+			// from its own address; the username-wide lock never applies to the REST path.
+			$ident  = null !== $user ? 'u' . $user->ID : Store::identity( $username );
+			$retry  = max( $retry, Store::lock_remaining( 'pair', Store::pair( $ident ) ) );
+			$global = ! $this->keys_on() && ! $this->is_api_request() ? Store::lock_remaining( 'user', $ident ) : 0;
+			if ( $global > 0 && ! $this->is_known_ip( $user ) ) {
+				$retry = max( $retry, $global );
 			}
 		}
 		return $retry;
@@ -202,21 +211,25 @@ final class LoginThrottle {
 		}
 		$window = Config::get( 'login_window' );
 		$this->count( 'ip', 'sec_login_ip', ClientIp::get(), Config::get( 'login_ip_limit' ), $window );
-		if ( $ip_only || OwnerBotRole::is_bot( Store::find_user( $username ) ) ) {
+		if ( $ip_only ) {
 			return;
 		}
 		$ident = Store::identity( $username );
-		if ( '' !== $ident ) {
-			$this->count( 'user', 'sec_login_user', $ident, Config::get( 'login_user_limit' ), $window );
+		if ( '' === $ident ) {
+			return;
+		}
+		$this->count( 'pair', 'sec_login_pair', Store::pair( $ident ), Config::get( 'login_user_limit' ), $window );
+		if ( ! $this->keys_on() && ! $this->is_api_request() ) {
+			$this->count( 'user', 'sec_login_user', $ident, Config::get( 'login_user_global_limit' ), $window );
 		}
 	}
 
 	/**
 	 * One counter step; lock when the limit is reached (the next attempt is refused).
 	 *
-	 * @param string $kind   `ip` or `user`.
+	 * @param string $kind   `ip`, `pair` or `user`.
 	 * @param string $bucket RateLimiter bucket.
-	 * @param string $value  IP key / identity.
+	 * @param string $value  IP key / pair key / identity.
 	 * @param int    $limit  Failures allowed (0 = bucket off).
 	 * @param int    $window Window seconds.
 	 */
@@ -248,8 +261,15 @@ final class LoginThrottle {
 		if ( null === $user ) {
 			return false;
 		}
-		$known = get_user_meta( $user->ID, self::META_KNOWN_IPS, true );
-		return is_array( $known ) && in_array( ClientIp::hash( ClientIp::get() ), $known, true );
+		return Store::is_known_ip( $user );
+	}
+
+	/**
+	 * Turnstile keys are set (every interactive login already carries a verified token).
+	 */
+	private function keys_on(): bool {
+		$ts = Plugin::instance()->integration( 'turnstile' );
+		return $ts instanceof Turnstile && $ts->is_available();
 	}
 
 	private function is_api_request(): bool {

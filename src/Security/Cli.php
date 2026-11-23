@@ -114,10 +114,12 @@ final class Cli {
 
 		$ts = Plugin::instance()->integration( 'turnstile' );
 		if ( $ts instanceof Turnstile && $ts->is_available() ) {
-			\WP_CLI::line( 'Turnstile: ON (fail ' . ( $ts->fails_open() ? 'open' : 'closed' ) . ')' );
+			\WP_CLI::line( 'Turnstile: ON (fail ' . ( $ts->fails_open() ? 'open' : 'closed' ) . '); username-wide login lock: OFF (per user+IP pair lock + per-IP lock + token on every login)' );
 		} else {
-			\WP_CLI::line( 'Turnstile: off (keys missing)' );
+			\WP_CLI::line( 'Turnstile: off (keys missing); username-wide login lock: ON for unknown IPs after ' . Config::get( 'login_user_global_limit' ) . ' failures (degraded mode, keys are a LAUNCH GATE)' );
 		}
+		$locks = Store::lock_counts();
+		\WP_CLI::line( 'active locks (upper bound: unlocked pairs linger until they expire): ' . ( null === $locks ? 'n/a (persistent object cache cannot be listed)' : 'pairs ' . $locks['pair'] . ', usernames ' . $locks['user'] . ', IPs ' . $locks['ip'] ) );
 
 		$tf = Plugin::instance()->integration( 'twofactor' );
 		if ( $tf instanceof TwoFactor && $tf->is_available() ) {
@@ -125,11 +127,34 @@ final class Cli {
 		} else {
 			\WP_CLI::line( 'Two Factor: NOT active (staff 2FA is a LAUNCH GATE)' );
 		}
+		$same = $this->staff_name_equals_login();
+		\WP_CLI::line( 'INFO staff display_name == user_login (public byline would expose the login; fix = launch checklist): ' . ( array() === $same ? 'none' : count( $same ) . ' account(s)' ) );
 		$staff = TwoFactorPolicy::staff_without_two_factor();
 		if ( null !== $staff ) {
 			\WP_CLI::line( 'staff without 2FA (LAUNCH GATE): ' . ( array() === $staff ? 'none' : implode( ', ', $staff ) ) );
 		}
 		return $failed;
+	}
+
+	/**
+	 * Staff accounts whose display name is their login (informational, SEC-044).
+	 *
+	 * @return string[] Account ids as strings (no login printed).
+	 */
+	private function staff_name_equals_login(): array {
+		$out = [];
+		foreach ( get_users(
+			[
+				'capability__in' => [ 'manage_options', 'manage_woocommerce' ],
+				'number'         => 200,
+				'orderby'        => 'ID',
+			]
+		) as $user ) {
+			if ( $user instanceof \WP_User && strtolower( trim( $user->display_name ) ) === strtolower( $user->user_login ) ) {
+				$out[] = (string) $user->ID;
+			}
+		}
+		return $out;
 	}
 
 	/**
@@ -326,7 +351,15 @@ final class Cli {
 			RateLimiter::reset( 'sec_strike', Store::subject( 'user:' . $ident ) );
 			RateLimiter::reset( 'sec_reset_user', Store::subject( $ident ) );
 			Store::unlock( 'user', $ident );
-			\WP_CLI::success( 'Login unlocked.' );
+			Store::bump_generation( $ident ); // Orphans every (account, IP) pair counter / lock and reset quota of the account.
+			if ( isset( $assoc['ip'] ) && is_string( $assoc['ip'] ) && false !== filter_var( $assoc['ip'], FILTER_VALIDATE_IP ) ) {
+				$pair = Store::pair( $ident, ClientIp::mask( $assoc['ip'] ) ); // Account without a user row (nonexistent name): exact pair.
+				RateLimiter::reset( 'sec_login_pair', Store::subject( $pair ) );
+				RateLimiter::reset( 'sec_strike', Store::subject( 'pair:' . $pair ) );
+				RateLimiter::reset( 'sec_reset_pair', Store::subject( $pair ) );
+				Store::unlock( 'pair', $pair );
+			}
+			\WP_CLI::success( 'Login unlocked (username-wide and every user+IP pair lock).' );
 			$done = true;
 		}
 		if ( isset( $assoc['ip'] ) && is_string( $assoc['ip'] ) ) {

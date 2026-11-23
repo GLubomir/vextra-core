@@ -246,6 +246,18 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * Hook the "enhanced data" pairs printed as `twitter:label<N>` / `twitter:data<N>` (Slack / X sharing): array of
+	 * `label => value` before Rank Math prints them (it numbers the tags itself, so removing one renumbers the rest).
+	 *
+	 * @param callable $callback Filter callback `( array $data )`.
+	 */
+	public function filter_enhanced_data( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/opengraph/slack_enhanced_data', $callback, 20 );
+		}
+	}
+
+	/**
 	 * Whether the Redirections module of Rank Math is active and its storage classes are present.
 	 * INTERNAL API (docs/compat/integrations.md): `RankMath\Redirections\DB` has no public documentation; every call below is
 	 * guarded and a failure degrades to "no redirect written" (the caller logs once).

@@ -21,19 +21,21 @@ final class Config {
 	 * Default numbers. `*_limit` = failures / requests allowed per `*_window` seconds. 0 disables the bucket.
 	 */
 	public const DEFAULTS = [
-		'login_ip_limit'     => 20,    // Failed logins per client IP (high: mobile carrier NAT shares IPs).
-		'login_user_limit'   => 8,     // Failed logins per username / e-mail across all IPs.
-		'login_window'       => 900,
-		'reset_ip_limit'     => 5,     // Lost-password requests per client IP.
-		'reset_ip_window'    => 900,
-		'reset_user_limit'   => 3,     // Lost-password mails per real account.
-		'reset_user_window'  => 3600,
-		'register_ip_limit'  => 5,     // Registration submits per client IP.
-		'register_ip_window' => 3600,
-		'lock_base'          => 900,   // First lock, seconds; every repeat inside `strike_window` doubles it.
-		'lock_max'           => 86400,
-		'strike_window'      => 86400,
-		'known_ips'          => 5,     // Remembered (hashed) IPs per user that skip the per-username lock.
+		'login_ip_limit'          => 20,   // Failed logins per client IP (high: mobile carrier NAT shares IPs).
+		'login_user_limit'        => 8,    // Failed logins per (username / e-mail, client IP) PAIR: failures from IP A never lock IP B.
+		'login_user_global_limit' => 30,   // Failed logins per username across all IPs; locks unknown IPs only, and ONLY without Turnstile keys.
+		'login_window'            => 900,
+		'reset_ip_limit'          => 5,    // Lost-password requests per client IP.
+		'reset_ip_window'         => 900,
+		'reset_user_limit'        => 3,    // Lost-password mails per (account, client IP) pair per `reset_user_window`.
+		'reset_user_global_limit' => 20,   // Lost-password mails per account across all IPs (mail-flood ceiling for one victim).
+		'reset_user_window'       => 3600,
+		'register_ip_limit'       => 5,    // Registration submits per client IP.
+		'register_ip_window'      => 3600,
+		'lock_base'               => 900,  // First lock, seconds; every repeat inside `strike_window` doubles it.
+		'lock_max'                => 86400,
+		'strike_window'           => 86400,
+		'known_ips'               => 5,    // Remembered (hashed) IPs per user that skip the global per-username lock (no-keys mode).
 	];
 
 	/**

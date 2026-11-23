@@ -127,9 +127,11 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'hook', 'woocommerce_enqueue_styles', false, 'theme Woo/Assets', 'Woo styles load next to ours' ),
 			$e( 'woocommerce', 'function', 'wc_get_orders', false, 'core Guard DraftOrders', 'draft-order purge skipped' ),
 			$e( 'woocommerce', 'function', 'as_schedule_recurring_action', false, 'core Guard DraftOrders (Action Scheduler bundled with Woo)', 'draft-order purge not scheduled' ),
-			$e( 'woocommerce', 'function', 'as_has_scheduled_action', false, 'core Guard DraftOrders', 'draft-order purge not scheduled' ),
+			$e( 'woocommerce', 'function', 'as_has_scheduled_action', false, 'core Guard DraftOrders, Security LostPassword (pending reset job dedup)', 'draft-order purge not scheduled; duplicate reset jobs possible (bounded by the quotas)' ),
 			$e( 'woocommerce', 'function', 'as_unschedule_all_actions', false, 'core Guard DraftOrders (deactivation)', 'schedule stays until Woo is removed' ),
-			$e( 'woocommerce', 'function', 'as_enqueue_async_action', false, 'core Guard DraftOrders', 'backlog drains one batch per day' ),
+			$e( 'woocommerce', 'function', 'as_enqueue_async_action', false, 'core Guard DraftOrders, Security LostPassword (reset mail job)', 'backlog drains one batch per day; reset mail sent synchronously, failure swallowed' ),
+			$e( 'woocommerce', 'function', 'as_schedule_single_action', false, 'core Security LostPassword (single retry of a failed reset mail)', 'no retry' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_reset_password_notification', false, 'core Security LostPassword (Woo reset mail job)', 'Woo reset mail job fails (logged), visitor still sees the neutral page' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_store_api_rate_limit_options', true, 'core Guard StoreApi', 'Store API limiter off (wc-ajax, coupon, REST, search buckets keep working)' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_store_api_rate_limit_id', false, 'core Guard StoreApi', 'Woo keys anonymous clients by REMOTE_ADDR itself' ),
 			$e( 'woocommerce', 'rest', '/wc/store/v1/products', false, 'core Guard StoreApi (blocked for anonymous)', 'nothing to block' ),
@@ -178,6 +180,7 @@ final class Compat implements ModuleInterface {
 			$e( 'rankmath', 'hook', 'rank_math/sitemap/entry', true, 'core RankMath adapter, Seo Sitemap', 'default entries' ),
 			$e( 'rankmath', 'hook', 'rank_math/sitemap/posts_to_exclude', true, 'core RankMath adapter, Seo Sitemap', 'noindex pages listed' ),
 			$e( 'rankmath', 'hook', 'rank_math/snippet/rich_snippet_product_entity', true, 'core RankMath adapter, Seo Schema', 'default schema' ),
+			$e( 'rankmath', 'hook', 'rank_math/opengraph/slack_enhanced_data', false, 'core RankMath adapter, Security AuthorExposure (SEC-044)', 'author "Written by" pair stays in the twitter meta' ),
 
 			// Two Factor (wordpress.org, optional: soft staff-2FA policy).
 			$e( 'twofactor', 'class', 'Two_Factor_Core', false, 'core TwoFactor adapter', 'staff 2FA not offered; rule staff-without-2fa reports it' ),
