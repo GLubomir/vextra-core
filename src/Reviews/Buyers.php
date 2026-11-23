@@ -18,6 +18,7 @@ final class Buyers {
 
 	private const META  = '_vx_reviews_bought';
 	private const BATCH = 50;
+	private const TTL   = 12 * HOUR_IN_SECONDS; // Safety net: rebuild even when no hook fired.
 
 	public function register(): void {
 		add_action( 'woocommerce_order_status_changed', [ $this, 'on_order_id' ], 10, 1 );
@@ -26,6 +27,10 @@ final class Buyers {
 		add_action( 'woocommerce_untrash_order', [ $this, 'on_order_id' ], 10, 1 );
 		add_action( 'woocommerce_order_refunded', [ $this, 'on_order_id' ], 10, 1 );
 		add_action( 'woocommerce_before_order_object_save', [ $this, 'on_save' ], 10, 1 );
+		add_action( 'woocommerce_saved_order_items', [ $this, 'on_order_id' ], 10, 1 );
+		add_action( 'woocommerce_new_order_item', [ $this, 'on_item' ], 10, 3 );
+		add_action( 'woocommerce_update_order_item', [ $this, 'on_item' ], 10, 3 );
+		add_action( 'woocommerce_before_delete_order_item', [ $this, 'on_item' ], 10, 1 );
 	}
 
 	/**
@@ -39,8 +44,11 @@ final class Buyers {
 			return false;
 		}
 		$stored = get_user_meta( $user_id, self::META, true );
-		if ( ! is_array( $stored ) || ! isset( $stored['ids'] ) || ! is_array( $stored['ids'] ) ) {
-			$stored = [ 'ids' => self::build( $user_id ) ];
+		if ( ! is_array( $stored ) || ! isset( $stored['ids'], $stored['built_at'] ) || ! is_array( $stored['ids'] ) || (int) $stored['built_at'] < time() - self::TTL ) {
+			$stored = [
+				'ids'      => self::build( $user_id ),
+				'built_at' => time(),
+			];
 			update_user_meta( $user_id, self::META, $stored );
 		}
 		return isset( $stored['ids'][ $product_id ] );
@@ -70,6 +78,21 @@ final class Buyers {
 		if ( $order instanceof \WC_Order ) {
 			self::forget( (int) $order->get_customer_id() );
 		}
+	}
+
+	/**
+	 * Order item added / changed / about to be deleted: the order's customer loses or gains products.
+	 *
+	 * @param mixed $item_id  Order item ID.
+	 * @param mixed $item     Item object (unused).
+	 * @param mixed $order_id Order ID (new / update hooks; the delete hook has none, it is resolved from the item).
+	 */
+	public function on_item( $item_id = 0, $item = null, $order_id = 0 ): void {
+		unset( $item );
+		if ( ! is_numeric( $order_id ) || (int) $order_id <= 0 ) {
+			$order_id = is_numeric( $item_id ) && function_exists( 'wc_get_order_id_by_order_item_id' ) ? wc_get_order_id_by_order_item_id( (int) $item_id ) : 0;
+		}
+		$this->on_order_id( $order_id );
 	}
 
 	/**
