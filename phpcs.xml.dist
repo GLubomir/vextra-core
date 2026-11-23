@@ -3,9 +3,13 @@
 	<description>Vextra Core plugin coding standards.</description>
 
 	<file>.</file>
+	<!-- WHY: third-party code. -->
 	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<!-- WHY: third-party code. -->
 	<exclude-pattern>*/node_modules/*</exclude-pattern>
+	<!-- WHY: generated translation files. -->
 	<exclude-pattern>*/languages/*</exclude-pattern>
+	<!-- WHY: local-only dev tools, export-ignored from deploy, not shipped. -->
 	<exclude-pattern>*/scripts/dev/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
@@ -16,12 +20,16 @@
 	<config name="minimum_wp_version" value="7.1"/>
 
 	<rule ref="WordPress">
+		<!-- WHY: PSR-4 class files (Foo.php) conflict with WP file naming. -->
 		<exclude name="WordPress.Files.FileName"/>
+		<!-- WHY: project standard is short array syntax []. -->
 		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
 		<exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
 		<!-- PrefixAllGlobals rejects prefixes shorter than 3 chars (our vx_/VX_ convention); enforced by review. -->
 		<exclude name="WordPress.NamingConventions.PrefixAllGlobals"/>
+		<!-- WHY: classes are documented by file/ADR; docblock per class is noise for final service classes. -->
 		<exclude name="Squiz.Commenting.ClassComment"/>
+		<!-- WHY: self-explanatory typed hook callbacks; missing docblock is allowed, malformed ones still flagged. -->
 		<exclude name="Squiz.Commenting.FunctionComment.Missing"/>
 	</rule>
 	<rule ref="PHPCompatibilityWP"/>
