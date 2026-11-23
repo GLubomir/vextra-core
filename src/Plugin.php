@@ -23,6 +23,8 @@ use Vextra\Core\Health\Health;
 use Vextra\Core\Integrations\AbstractIntegration;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Integrations\Turnstile\Turnstile;
+use Vextra\Core\Integrations\TwoFactor\TwoFactor;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
 use Vextra\Core\Security\Security;
@@ -52,6 +54,8 @@ final class Plugin {
 		WooCommerce::class,
 		Polylang::class,
 		RankMath::class,
+		Turnstile::class,
+		TwoFactor::class,
 	];
 
 	/**
@@ -126,7 +130,7 @@ final class Plugin {
 	/**
 	 * Adapter accessor for modules. Check is_available() before use.
 	 *
-	 * @param string $id Integration id (`woocommerce`, `polylang`, `rankmath`).
+	 * @param string $id Integration id (`woocommerce`, `polylang`, `rankmath`, `turnstile`, `twofactor`).
 	 */
 	public function integration( string $id ): ?AbstractIntegration {
 		return $this->integrations()[ $id ] ?? null;

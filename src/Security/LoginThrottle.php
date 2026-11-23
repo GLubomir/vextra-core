@@ -104,7 +104,10 @@ final class LoginThrottle {
 		if ( $error instanceof \WP_Error && in_array( 'vx_login_locked', $error->get_error_codes(), true ) ) {
 			return;
 		}
-		Failsafe::run( 'login-count', fn() => $this->record_failure( is_string( $username ) ? $username : '' ) );
+		// A missing / failed Turnstile token proves nothing about the account: it counts for the IP only (an anonymous client
+		// must not be able to lock a real user out through the per-username bucket).
+		$ip_only = $error instanceof \WP_Error && in_array( TurnstileForms::ERROR_CODE, $error->get_error_codes(), true );
+		Failsafe::run( 'login-count', fn() => $this->record_failure( is_string( $username ) ? $username : '', $ip_only ) );
 	}
 
 	/**
@@ -173,11 +176,15 @@ final class LoginThrottle {
 			$retry = Store::lock_remaining( 'ip', ClientIp::get() );
 		}
 		if ( Config::get( 'login_user_limit' ) > 0 && '' !== trim( $username ) ) {
-			$user   = Store::find_user( $username );
-			$ident  = null !== $user ? 'u' . $user->ID : Store::identity( $username );
-			$remain = Store::lock_remaining( 'user', $ident );
-			if ( $remain > 0 && ! $this->is_known_ip( $user ) ) {
-				$retry = max( $retry, $remain );
+			$user = Store::find_user( $username );
+			// SEC-043: the owner bot has no per-username lock (anonymous failures must never lock its Application Password out);
+			// only the per-IP lock applies, so the bot still works from every other address.
+			if ( ! OwnerBotRole::is_bot( $user ) ) {
+				$ident  = null !== $user ? 'u' . $user->ID : Store::identity( $username );
+				$remain = Store::lock_remaining( 'user', $ident );
+				if ( $remain > 0 && ! $this->is_known_ip( $user ) ) {
+					$retry = max( $retry, $remain );
+				}
 			}
 		}
 		return $retry;
@@ -187,13 +194,17 @@ final class LoginThrottle {
 	 * Count one failed attempt against the IP and the identity; lock a subject that reached its limit.
 	 *
 	 * @param string $username Login or e-mail as typed.
+	 * @param bool   $ip_only  Count the IP bucket only.
 	 */
-	private function record_failure( string $username ): void {
+	private function record_failure( string $username, bool $ip_only = false ): void {
 		if ( Config::is_exempt() ) {
 			return;
 		}
 		$window = Config::get( 'login_window' );
 		$this->count( 'ip', 'sec_login_ip', ClientIp::get(), Config::get( 'login_ip_limit' ), $window );
+		if ( $ip_only || OwnerBotRole::is_bot( Store::find_user( $username ) ) ) {
+			return;
+		}
 		$ident = Store::identity( $username );
 		if ( '' !== $ident ) {
 			$this->count( 'user', 'sec_login_user', $ident, Config::get( 'login_user_limit' ), $window );
