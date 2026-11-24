@@ -48,6 +48,7 @@ final class Query {
 
 	public function register(): void {
 		add_action( 'parse_request', [ $this, 'sanitise_get' ], 3 );
+		add_action( 'pre_get_posts', [ $this, 'route_search' ], 5 );
 		add_action( 'pre_get_posts', [ $this, 'main_query' ], 20 );
 		add_filter( 'posts_clauses', [ $this, 'clauses' ], 20, 2 );
 		add_filter( 'loop_shop_per_page', static fn(): int => Params::PER_PAGE, 99 );
@@ -170,6 +171,19 @@ final class Query {
 			return 'shop';
 		}
 		return '';
+	}
+
+	/**
+	 * The store only searches products: a front search without `post_type` (`?s=`, `/search/<q>/`; not `?s=` on a taxonomy / archive URL, which keeps its listing) becomes the product search, so it
+	 * is answered by the catalog search template (no redirect, same URL, same noindex rules as `?post_type=product`).
+	 *
+	 * @param mixed $q Query.
+	 */
+	public function route_search( $q ): void {
+		if ( ! $q instanceof \WP_Query || is_admin() || ! $q->is_main_query() || ! $q->is_search() || $q->is_tax() || $q->is_post_type_archive() || '' !== (string) ( is_array( $q->get( 'post_type' ) ) ? 'x' : $q->get( 'post_type' ) ) ) {
+			return;
+		}
+		$q->set( 'post_type', 'product' );
 	}
 
 	/**
