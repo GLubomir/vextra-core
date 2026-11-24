@@ -1,6 +1,6 @@
 <?php
 /**
- * WP-CLI: `wp vextra recommend explain <product_id> [--context=product|cart|post_add] [--list=accessories|related] [--lang=uk|ru]
+ * WP-CLI: `wp vextra recommend explain <product_id> [--for=product|cart|post_add] [--list=accessories|related] [--lang=uk|ru]
  * [--format=table|json]` and `wp vextra recommend flush` (TASK-038). CLI only, no web entry point.
  *
  * `explain` always builds fresh (nothing is cached under WP-CLI) and prints per source the raw candidates, per filter the ids it
@@ -42,18 +42,18 @@ final class Cli {
 	}
 
 	/**
-	 * `wp vextra recommend explain <product_id> [--context=...] [--list=...] [--lang=...] [--format=...]`.
+	 * `wp vextra recommend explain <product_id> [--for=...] [--list=...] [--lang=...] [--format=...]`.
 	 *
 	 * @param array<int,string>   $args  Positional args: product id (cart: comma list).
 	 * @param array<string,mixed> $assoc Flags.
 	 */
 	public function explain( $args = [], $assoc = [] ): void {
-		$context = (string) ( $assoc['context'] ?? 'product' );
+		$context = (string) ( $assoc['for'] ?? 'product' ); // NOT `--context`: that is a WP-CLI global (admin|frontend|cli|auto).
 		$list    = (string) ( $assoc['list'] ?? 'related' );
 		$format  = (string) ( $assoc['format'] ?? 'table' );
 		$lang    = (string) ( $assoc['lang'] ?? '' );
 		if ( ! in_array( $context, [ 'product', 'cart', 'post_add' ], true ) || ! in_array( $list, [ 'accessories', 'related' ], true ) || ! in_array( $format, [ 'table', 'json' ], true ) ) {
-			\WP_CLI::error( 'Invalid --context / --list / --format.' );
+			\WP_CLI::error( 'Invalid --for / --list / --format.' );
 		}
 
 		$ids = array_values( array_filter( array_map( 'absint', explode( ',', (string) ( $args[0] ?? '' ) ) ) ) );

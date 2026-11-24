@@ -75,9 +75,13 @@ final class Rest {
 		$lang    = '';
 		$args    = [];
 
-		if ( $pll instanceof Polylang && $pll->is_ready() ) {
-			$asked = (string) $request->get_param( 'lang' );
-			$lang  = in_array( $asked, $pll->languages(), true ) ? $asked : '';
+		$asked = $request->get_param( 'lang' );
+		if ( null !== $asked ) {
+			// Whitelist = the Polylang languages; anything else (or Polylang absent) is a bad request.
+			if ( ! is_string( $asked ) || ! $pll instanceof Polylang || ! $pll->is_ready() || ! in_array( $asked, $pll->languages(), true ) ) {
+				return new \WP_Error( 'vx_rec_bad_request', 'Invalid request.', [ 'status' => 400 ] );
+			}
+			$lang = $asked;
 		}
 
 		if ( 'post_add' === $context ) {

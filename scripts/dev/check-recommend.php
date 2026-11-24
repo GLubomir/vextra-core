@@ -619,6 +619,22 @@ try {
 	$json  = wp_json_encode( $rest->get_data() );
 	$ok( ! str_contains( (string) $json, '_vx_partner_id' ) && ! str_contains( (string) $json, '_vx_commission' ), 'not exposed in the public REST product response (status ' . $rest->get_status() . ')' );
 
+	// ------------------------------------------------------------------------------------------------------------ AC14 CLI + REST lang
+	WP_CLI::line( 'AC14 CLI (--for) and REST lang whitelist' );
+	foreach ( [ 'product', 'cart', 'post_add' ] as $for ) {
+		$json = WP_CLI::runcommand( 'vextra recommend explain 1066 --for=' . $for . ' --format=json', [ 'return' => true, 'launch' => false, 'exit_error' => false ] );
+		$data = json_decode( (string) $json, true );
+		$ok( is_array( $data ) && $for === ( $data['context'] ?? '' ) && 'bypassed' === ( $data['cache'] ?? '' ), 'explain --for=' . $for . ' selects the context', is_array( $data ) ? (string) ( $data['list'] ?? '' ) : substr( (string) $json, 0, 80 ) );
+	}
+	$bad = WP_CLI::runcommand( 'vextra recommend explain 1066 --for=nope', [ 'return' => 'all', 'launch' => false, 'exit_error' => false ] );
+	$ok( is_object( $bad ) ? 0 !== $bad->return_code : true, 'explain --for=<unknown> is refused' );
+	foreach ( [ 'xx' => 400, 'uk' => 200, 'ru' => 200, '../x' => 400 ] as $code => $status ) {
+		$req = new WP_REST_Request( 'GET', '/vextra/v1/recommend' );
+		$req->set_query_params( [ 'context' => 'post_add', 'product_id' => 1066, 'lang' => $code ] );
+		$res = rest_do_request( $req );
+		$ok( $status === $res->get_status(), 'REST lang=' . $code . ' -> ' . $status, (string) $res->get_status() );
+	}
+
 	// ------------------------------------------------------------------------------------------------------------ AC15 conflict guard + kill switch
 	WP_CLI::line( 'AC15 conflict guard and kill switch' );
 	$conf  = new Conflicts();
