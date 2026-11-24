@@ -53,6 +53,8 @@ final class Conflicts {
 		'filter'    => [ 'woocommerce-products-filter', 'facetwp', 'jet-smart-filters', 'woo-product-filter', 'filter-everything', 'woocommerce-ajax-filters', 'yith-woocommerce-ajax-navigation' ],
 		// Related / upsell / frequently-bought-together plugins: the recommend module owns related products, upsells and cross-sells output. Slugs from wordpress.org (2026-11); the Woo extension is a premium folder name.
 		'recommend' => [ 'yith-woocommerce-frequently-bought-together', 'yith-woocommerce-related-products', 'woocommerce-product-recommendations', 'woo-related-products-refresh-on-reload', 'wc-frequently-bought-together', 'cartflows-pro', 'wpc-frequently-bought-together', 'wpc-related-products', 'woo-product-recommendations' ],
+		// Variation swatch / product gallery / sticky add-to-cart plugins: the product module + theme own the gallery, swatches and buy box. Slugs from wordpress.org (2026-11).
+		'pdp'       => [ 'woo-variation-swatches', 'variation-swatches-for-woocommerce', 'woo-variation-gallery', 'yith-woocommerce-color-label-variations', 'yith-woocommerce-color-and-label-variations', 'woo-product-gallery-slider', 'sticky-add-to-cart-for-woocommerce', 'wpc-variations-radio-buttons', 'wpc-variation-swatches', 'wpc-product-gallery', 'woo-variation-swatches-pro' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -258,6 +260,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => true,
 				'fix_hint' => static fn(): string => __( 'Фільтри, лічильники, URL і правила індексації списку товарів веде vextra-core. Другий плагін фільтрів створює власні параметри URL (дублі в індексі) та запити: деактивуйте його.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-pdp-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін зразків варіацій / галереї / липкої кнопки: модуль product вимкнено', 'vextra-core' ),
+				'module'   => 'product',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['pdp'] ),
+				'action'   => self::ACTION_YIELD,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Галерею, зразки варіацій і блок покупки веде vextra-core + тема. Другий плагін дублює розмітку й скрипти: деактивуйте його, модуль увімкнеться сам; до того працює стандартна сторінка товару WooCommerce.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[

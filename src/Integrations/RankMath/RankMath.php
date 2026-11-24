@@ -25,6 +25,12 @@ final class RankMath extends AbstractIntegration {
 	public const WRITABLE_GENERAL = [ 'redirections_post_redirect', 'attachment_redirect_urls', 'attachment_redirect_default' ];
 
 	/**
+	 * Rank Math sitemap options option name and its writable key (TASK-044a `apply-config`: the featured image is listed in the image sitemap).
+	 */
+	public const SITEMAP_OPTION   = 'rank-math-options-sitemap';
+	public const WRITABLE_SITEMAP = [ 'include_featured_image' ];
+
+	/**
 	 * Rank Math titles options option name and its writable keys (`apply-config`: password-protected pages / products are `noindex`).
 	 */
 	public const TITLES_OPTION   = 'rank-math-options-titles';
@@ -121,6 +127,18 @@ final class RankMath extends AbstractIntegration {
 	public function filter_sitemap_entry( callable $callback ): void {
 		if ( $this->is_available() ) {
 			add_filter( 'rank_math/sitemap/entry', $callback, 20, 3 );
+		}
+	}
+
+	/**
+	 * Hook the filter of the image list of one sitemap entry: `( array $images, int $post_id )`, items `{ src, title, alt }`. Runs after Rank Math's
+	 * own WooCommerce gallery filter (priority 10), so it can replace the list.
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_sitemap_images( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/sitemap/urlimages', $callback, 20, 2 );
 		}
 	}
 
@@ -589,6 +607,16 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * Same for `rank-math-options-sitemap` (whitelist WRITABLE_SITEMAP).
+	 *
+	 * @param array<string,string> $values Key => value.
+	 * @return string[]|null Keys that changed, null when the write is impossible.
+	 */
+	public function write_sitemap_settings( array $values ): ?array {
+		return $this->write_settings( self::SITEMAP_OPTION, self::WRITABLE_SITEMAP, $values );
+	}
+
+	/**
 	 * Same for `rank-math-options-titles` (whitelist WRITABLE_TITLES).
 	 *
 	 * @param array<string,string> $values Key => value.
@@ -647,6 +675,15 @@ final class RankMath extends AbstractIntegration {
 	 */
 	public function stored_titles_setting( string $key ): string {
 		return $this->stored_setting( self::TITLES_OPTION, $key );
+	}
+
+	/**
+	 * Stored value of one sitemap setting straight from the option.
+	 *
+	 * @param string $key Option key.
+	 */
+	public function stored_sitemap_setting( string $key ): string {
+		return $this->stored_setting( self::SITEMAP_OPTION, $key );
 	}
 
 	/**

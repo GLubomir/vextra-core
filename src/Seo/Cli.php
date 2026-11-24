@@ -158,14 +158,16 @@ final class Cli {
 		}
 		$changed = $this->rank_math->write_general_settings( $values );
 		$titles  = $this->rank_math->write_titles_settings( [ 'noindex_password_protected' => 'on' ] );
-		if ( null === $changed || null === $titles ) {
+		$sitemap = $this->rank_math->write_sitemap_settings( [ 'include_featured_image' => 'on' ] );
+		if ( null === $changed || null === $titles || null === $sitemap ) {
 			\WP_CLI::error( 'Could not write the Rank Math options; set the four settings by hand (docs/system/modules/seo.md).' );
 		}
 		foreach ( [ 'redirections_post_redirect', 'attachment_redirect_urls', 'attachment_redirect_default' ] as $key ) {
 			\WP_CLI::log( sprintf( '%s = %s%s', $key, $this->rank_math->stored_general_setting( $key ), in_array( $key, $changed, true ) ? ' (changed)' : '' ) );
 		}
 		\WP_CLI::log( sprintf( 'titles.noindex_password_protected = %s%s', $this->rank_math->stored_titles_setting( 'noindex_password_protected' ), array() !== $titles ? ' (changed)' : '' ) );
-		$total = count( $changed ) + count( $titles );
+		\WP_CLI::log( sprintf( 'sitemap.include_featured_image = %s%s', $this->rank_math->stored_sitemap_setting( 'include_featured_image' ), array() !== $sitemap ? ' (changed)' : '' ) );
+		$total = count( $changed ) + count( $titles ) + count( $sitemap );
 		\WP_CLI::success( 0 === $total ? 'Already applied, nothing changed.' : sprintf( 'Applied %d setting(s).', $total ) );
 	}
 

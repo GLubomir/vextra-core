@@ -30,6 +30,7 @@ use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
 use Vextra\Core\Performance\OptionPriming;
 use Vextra\Core\Performance\Performance;
+use Vextra\Core\Product\Product;
 use Vextra\Core\Recommend\Recommend;
 use Vextra\Core\Reviews\Reviews;
 use Vextra\Core\Security\Security;
@@ -55,6 +56,7 @@ final class Plugin {
 		Performance::class,
 		Catalog::class,
 		Recommend::class,
+		Product::class,
 	];
 
 	/**
