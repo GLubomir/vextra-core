@@ -32,6 +32,8 @@ final class Config {
 		'search_max'      => 100,   // Characters; longer queries are truncated.
 		'search_ttl'      => 120,   // Seconds a search id list is cached.
 		'search_max_ids'  => 500,   // Larger result sets are never cached.
+		'facet_limit'     => 120,   // Facet / sort / search / paged URLs (query-string params), per IP. Generous: CGNAT.
+		'facet_window'    => 60,
 		'cartpost_limit'  => 20,    // POST add-to-cart (no-JS form), per IP.
 		'cartpost_window' => 60,
 		'per_page_cap'    => 20,    // Anonymous wp/v2 product listings.

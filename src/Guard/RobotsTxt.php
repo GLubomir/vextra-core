@@ -36,6 +36,9 @@ final class RobotsTxt {
 		'Disallow: /*?*min_price=',
 		'Disallow: /*?*max_price=',
 		'Disallow: /*?*rating_filter=',
+		'Disallow: /*?*product_cat=',
+		'Disallow: /search/',
+		'Disallow: /ru/search/',
 		'Disallow: /wp-json/wc/store/',
 	];
 

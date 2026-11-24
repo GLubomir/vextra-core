@@ -16,6 +16,9 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Multilang;
 
+use Vextra\Core\Catalog\Params;
+use Vextra\Core\Catalog\SalePage;
+use Vextra\Core\Catalog\SaleProducts;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Seo\TermCounts;
@@ -60,24 +63,38 @@ final class Hreflang {
 	}
 
 	/**
-	 * Hreflang of PAGINATED catalogue archives (`/catalog/page/N/` <-> `/ru/catalog/page/N/`, same for `product_cat`).
+	 * Hreflang of PAGINATED catalogue archives (`/catalog/page/N/` <-> `/ru/catalog/page/N/`, same for `product_cat`) and of the
+	 * sale page (`/aktsii/page/N/` <-> `/ru/aktsii/page/N/`, N within `SalePage::max_pages()`).
 	 *
 	 * Polylang prints nothing on paged archives and its translation URLs ignore the page number, so the set is built here from
 	 * the translation group (shop page / category twins) plus `page/N/`. Page N of a twin is assumed to exist when it exists in
 	 * the current language (twins are kept 1:1 by ProductSync; a category whose twin is not indexable is dropped by filter()).
-	 * Only shop and `product_cat` archives; singular pages, search and other archives print nothing. Same output rules as filter().
+	 * Only shop, `product_cat` archives and the sale page; other singular pages, search and other archives print nothing. Same output rules as filter().
 	 */
 	public function print_paged(): void {
-		if ( ! is_paged() || is_singular() ) {
+		if ( ! is_paged() || Params::has_facet( $_GET ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- keys only.
+			return;
+		}
+		$sale = SalePage::is_sale_page();
+		if ( is_singular() && ! $sale ) {
 			return;
 		}
 		$paged = max( 1, (int) get_query_var( 'paged' ) );
 		global $wp_query;
-		if ( $paged < 2 || $paged > max( 1, (int) ( $wp_query->max_num_pages ?? 1 ) ) ) {
+		$max = $sale ? SalePage::max_pages() : max( 1, (int) ( $wp_query->max_num_pages ?? 1 ) );
+		if ( $paged < 2 || $paged > $max ) {
 			return;
 		}
 
-		if ( is_tax( TermCounts::TAXONOMY ) ) {
+		if ( $sale ) {
+			$group = [];
+			foreach ( $this->polylang->translations( (int) get_queried_object_id() ) as $lang => $id ) {
+				$link = get_permalink( (int) $id );
+				if ( is_string( $link ) && '' !== $link && 'publish' === get_post_status( (int) $id ) ) {
+					$group[ (string) $lang ] = $link;
+				}
+			}
+		} elseif ( is_tax( TermCounts::TAXONOMY ) ) {
 			$group = [];
 			foreach ( $this->polylang->term_translations( (int) get_queried_object_id() ) as $lang => $id ) {
 				$link = get_term_link( (int) $id, TermCounts::TAXONOMY );
@@ -168,14 +185,19 @@ final class Hreflang {
 	 * Pages that must not carry alternates.
 	 */
 	private function is_suppressed(): bool {
-		if ( is_search() || is_404() || is_feed() ) {
+		// Facet / sort / search / paged-argument URLs are noindex (Seo\Robots) and carry no alternates.
+		if ( is_search() || is_404() || is_feed() || Params::has_facet( $_GET ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- keys only.
 			return true;
 		}
 		if ( ( function_exists( 'is_cart' ) && is_cart() ) || ( function_exists( 'is_checkout' ) && is_checkout() ) || ( function_exists( 'is_account_page' ) && is_account_page() ) ) {
 			return true;
 		}
 		if ( is_singular() ) {
-			return $this->rank_math->is_post_noindex( (int) get_queried_object_id() );
+			$id = (int) get_queried_object_id();
+			if ( SalePage::is_sale_page() && 0 === SaleProducts::count( SalePage::language_of( $id ) ) ) {
+				return true;
+			}
+			return $this->rank_math->is_post_noindex( $id );
 		}
 		if ( is_tax( TermCounts::TAXONOMY ) ) {
 			return ! $this->counts->is_indexable( (int) get_queried_object_id() );
@@ -201,9 +223,11 @@ final class Hreflang {
 		if ( ! is_singular() ) {
 			return null;
 		}
-		$out = [];
+		$out  = [];
+		$sale = SalePage::map();
 		foreach ( $this->polylang->translations( (int) get_queried_object_id() ) as $lang => $id ) {
-			if ( 'publish' === get_post_status( $id ) ) {
+			// A sale page without products on sale is noindex: its language drops out of the set.
+			if ( 'publish' === get_post_status( $id ) && ! ( in_array( $id, $sale, true ) && 0 === SaleProducts::count( (string) $lang ) ) ) {
 				$out[] = (string) $lang;
 			}
 		}

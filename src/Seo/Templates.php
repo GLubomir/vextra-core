@@ -15,6 +15,7 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Catalog\SalePage;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
 
@@ -143,6 +144,10 @@ final class Templates {
 			return $this->with_page_title( $title, $t, $site );
 		}
 
+		if ( SalePage::is_sale_page() ) {
+			return $this->with_page_title( $title, $t, $site );
+		}
+
 		return $title;
 	}
 
@@ -190,6 +195,10 @@ final class Templates {
 			if ( ! $this->rank_math->post_has_manual( $this->shop_page_id(), 'description' ) ) {
 				$description = $t['shop_description'];
 			}
+			return $this->with_page_description( $description, $t );
+		}
+
+		if ( SalePage::is_sale_page() ) {
 			return $this->with_page_description( $description, $t );
 		}
 

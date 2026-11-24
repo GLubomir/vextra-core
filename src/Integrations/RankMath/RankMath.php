@@ -96,6 +96,18 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * Hook the canonical URL filter (`rank_math/frontend/canonical`: receives and returns the canonical URL string). No-op when
+	 * Rank Math is absent.
+	 *
+	 * @param callable $callback Filter callback.
+	 */
+	public function filter_canonical( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/frontend/canonical', $callback, 20 );
+		}
+	}
+
+	/**
 	 * Hook a sitemap entry filter: `( array $url, string $type, object $object )`; returning an empty value drops the entry.
 	 *
 	 * @param callable $callback Filter callback.

@@ -47,6 +47,7 @@ final class Guard implements ModuleInterface {
 		( new TermEdits() )->register();
 		( new WcAjax() )->register();
 		( new Search() )->register();
+		( new Facets() )->register();
 		( new UserAgents() )->register();
 	}
 }

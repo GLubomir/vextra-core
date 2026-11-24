@@ -76,4 +76,56 @@ final class WooCommerce extends AbstractIntegration {
 	public function on_block_types( callable $callback ): void {
 		add_filter( 'woocommerce_get_block_types', $callback, 99 );
 	}
+
+	/**
+	 * Ids of the products on sale (`wc_get_product_ids_on_sale`, cached by Woo in a transient). Includes variable parents with
+	 * sale children and the ids of every language. Fallback: [].
+	 *
+	 * @return int[]
+	 */
+	public function sale_product_ids(): array {
+		if ( ! $this->is_available() || ! function_exists( 'wc_get_product_ids_on_sale' ) ) {
+			return [];
+		}
+		return array_values( array_filter( array_map( 'absint', (array) wc_get_product_ids_on_sale() ) ) );
+	}
+
+	/**
+	 * The ids of a list that are on sale RIGHT NOW (`WC_Product::is_on_sale()` honours the sale schedule, so a sale whose end
+	 * date has passed but whose lookup row is stale is dropped). Products are loaded through CRUD (caches primed in one query per 200). Fallback: [].
+	 *
+	 * @param int[] $ids Product ids.
+	 * @return int[]
+	 */
+	public function on_sale_now( array $ids ): array {
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+		if ( array() === $ids || ! $this->is_available() || ! function_exists( 'wc_get_product' ) ) {
+			return [];
+		}
+		$out = [];
+		foreach ( array_chunk( $ids, 200 ) as $chunk ) {
+			// One query primes the post and meta caches of the chunk. NOT wc_get_products(): Polylang rewrites `include` / `post__in`
+			// to the translations in the CURRENT language, which would swap the ids.
+			new \WP_Query(
+				[
+					'post__in'            => $chunk,
+					'post_type'           => 'product',
+					'post_status'         => 'publish',
+					'posts_per_page'      => count( $chunk ),
+					'orderby'             => 'none',
+					'ignore_sticky_posts' => true,
+					'no_found_rows'       => true,
+					'lang'                => '',
+					'suppress_filters'    => true,
+				]
+			);
+			foreach ( $chunk as $id ) {
+				$product = wc_get_product( $id );
+				if ( $product instanceof \WC_Product && 'publish' === $product->get_status() && $product->is_on_sale() ) {
+					$out[] = (int) $product->get_id();
+				}
+			}
+		}
+		return $out;
+	}
 }

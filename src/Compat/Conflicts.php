@@ -49,6 +49,8 @@ final class Conflicts {
 		'translit'  => [ 'cyr2lat', 'cyr3lat', 'cyr-and-lat', 'rustolat', 'cyrillic-to-latin', 'cyrlitera' ],
 		// Asset / cache optimisers that also dequeue, defer or combine scripts (the theme asset policy and the Performance module already do it). Free slugs from wordpress.org, premium folder names from their vendors.
 		'perf'      => [ 'autoptimize', 'perfmatters', 'wp-rocket', 'wp-asset-clean-up', 'wp-asset-clean-up-pro', 'litespeed-cache', 'wp-fastest-cache', 'w3-total-cache', 'wp-optimize', 'flying-press', 'fast-velocity-minify', 'nitropack', 'hummingbird-performance', 'sg-cachepress' ],
+		// Product filter / facet plugins: the catalog module owns the filters, counts, URLs and indexation rules of the listing. Slugs from wordpress.org (2026-11).
+		'filter'    => [ 'woocommerce-products-filter', 'facetwp', 'jet-smart-filters', 'woo-product-filter', 'filter-everything', 'woocommerce-ajax-filters', 'yith-woocommerce-ajax-navigation' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -234,6 +236,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Тема і vextra-core вже відкладають jQuery, знімають зайві скрипти / стилі WooCommerce та WordPress і пропускають непотрібні блоки. Другий оптимізатор може подвоїти або зламати це: вимкніть у ньому відкладання / видалення скриптів, або вимкніть наш пункт (константа VX_PERF_DISABLED, фільтр vextra/assets/policy).', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-filter-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін фільтрів товарів поруч із фільтрами каталогу vextra-core', 'vextra-core' ),
+				'module'   => 'catalog',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['filter'] ),
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Фільтри, лічильники, URL і правила індексації списку товарів веде vextra-core. Другий плагін фільтрів створює власні параметри URL (дублі в індексі) та запити: деактивуйте його.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
