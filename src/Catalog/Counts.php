@@ -22,6 +22,7 @@ use Vextra\Core\Integrations\WooCommerce\Lookup;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Plugin;
 use Vextra\Core\Support\Cache;
+use Vextra\Core\Support\Listable;
 
 final class Counts {
 
@@ -326,19 +327,21 @@ final class Counts {
 			return [];
 		}
 		$query = new \WP_Query(
-			[
-				's'                      => $search,
-				'post_type'              => 'product',
-				'post_status'            => 'publish',
-				'fields'                 => 'ids',
-				'posts_per_page'         => Lookup::MAX_SCOPE + 1,
-				'no_found_rows'          => true,
-				'orderby'                => 'none',
-				'ignore_sticky_posts'    => true,
-				'update_post_meta_cache' => false,
-				'update_post_term_cache' => false,
-				'lang'                   => $lang,
-			]
+			Listable::apply(
+				[
+					's'                      => $search,
+					'post_type'              => 'product',
+					'post_status'            => 'publish',
+					'fields'                 => 'ids',
+					'posts_per_page'         => Lookup::MAX_SCOPE + 1,
+					'no_found_rows'          => true,
+					'orderby'                => 'none',
+					'ignore_sticky_posts'    => true,
+					'update_post_meta_cache' => false,
+					'update_post_term_cache' => false,
+					'lang'                   => $lang,
+				]
+			)
 		);
 		return array_map( 'intval', (array) $query->posts );
 	}

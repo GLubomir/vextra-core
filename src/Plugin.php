@@ -30,10 +30,12 @@ use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Multilang\Multilang;
 use Vextra\Core\Performance\OptionPriming;
 use Vextra\Core\Performance\Performance;
+use Vextra\Core\Recommend\Recommend;
 use Vextra\Core\Reviews\Reviews;
 use Vextra\Core\Security\Security;
 use Vextra\Core\Seo\Seo;
 use Vextra\Core\Seo\Urls;
+use Vextra\Core\Support\Listable;
 
 final class Plugin {
 
@@ -52,6 +54,7 @@ final class Plugin {
 		Reviews::class,
 		Performance::class,
 		Catalog::class,
+		Recommend::class,
 	];
 
 	/**
@@ -205,6 +208,7 @@ final class Plugin {
 	public function register_modules(): void {
 		( new Notices( $this->autoload_missing, $this->integrations()['woocommerce'] ) )->register();
 		$this->conflicts();
+		Listable::register(); // SEC-066: protected products never appear in an automatic listing.
 
 		/**
 		 * Filters the module class list.

@@ -41,6 +41,7 @@ final class Catalog implements ModuleInterface {
 		'woocommerce_variation_set_stock_status',
 		'woocommerce_scheduled_sales',
 		'vextra/catalog/recompute_discount',
+		'vextra/catalog/product_exposure_changed',
 	];
 
 	public const PURGE_HOOK = 'vextra/catalog/purge';

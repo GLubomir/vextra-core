@@ -17,6 +17,8 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Integrations\WooCommerce;
 
+use Vextra\Core\Support\Listable;
+
 final class Lookup {
 
 	/**
@@ -174,7 +176,7 @@ final class Lookup {
 			FROM ' . $wpdb->posts . ' p
 			INNER JOIN ' . self::table() . ' l ON l.product_id = p.ID
 			LEFT JOIN ' . $wpdb->postmeta . ' m ON m.post_id = p.ID AND m.meta_key = %s
-			WHERE p.post_type = %s AND p.post_status = %s
+			WHERE p.post_type = %s AND p.post_status = %s' . Listable::sql( 'p' ) . '
 			AND p.ID IN ( SELECT tr.object_id FROM ' . $wpdb->term_relationships . ' tr
 				INNER JOIN ' . $wpdb->term_taxonomy . ' tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
 				WHERE tt.taxonomy = %s AND tt.term_id IN ( ' . $this->placeholders_d( $term_ids ) . ' ) )';
@@ -213,7 +215,7 @@ final class Lookup {
 			FROM ' . $wpdb->posts . ' p
 			INNER JOIN ' . self::table() . ' l ON l.product_id = p.ID
 			LEFT JOIN ' . $wpdb->postmeta . ' m ON m.post_id = p.ID AND m.meta_key = %s
-			WHERE p.post_type = %s AND p.post_status = %s AND p.ID IN ( ' . $this->placeholders_d( $ids ) . ' )';
+			WHERE p.post_type = %s AND p.post_status = %s' . Listable::sql( 'p' ) . ' AND p.ID IN ( ' . $this->placeholders_d( $ids ) . ' )';
 		$args = array_merge( [ '_vx_discount_pct', 'product', 'publish' ], $ids );
 
 		if ( $hidden_term_tt > 0 ) {
@@ -225,6 +227,108 @@ final class Lookup {
 		}
 
 		return $this->run_facts( $sql, $args );
+	}
+
+	/**
+	 * Published product ids of a set of `product_cat` terms (descendants already included by the caller), ascending, capped. One
+	 * statement (the WP_Query tax-query resolution costs three). Empty when the list is empty.
+	 *
+	 * @param int[] $term_ids Term ids.
+	 * @param int   $limit    Maximum ids.
+	 * @return int[]
+	 */
+	public function product_ids_in_terms( array $term_ids, int $limit ): array {
+		global $wpdb;
+
+		$term_ids = array_values( array_unique( array_filter( array_map( 'absint', $term_ids ) ) ) );
+		if ( array() === $term_ids || $limit < 1 ) {
+			return [];
+		}
+		$sql = 'SELECT DISTINCT p.ID FROM ' . $wpdb->posts . ' p
+			INNER JOIN ' . $wpdb->term_relationships . ' tr ON tr.object_id = p.ID
+			INNER JOIN ' . $wpdb->term_taxonomy . ' tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+			WHERE p.post_type = %s AND p.post_status = %s' . Listable::sql( 'p' ) . ' AND tt.taxonomy = %s AND tt.term_id IN ( ' . $this->placeholders_d( $term_ids ) . ' )
+			ORDER BY p.ID ASC LIMIT %d';
+		$ids = $wpdb->get_col( $wpdb->prepare( $sql, array_merge( [ 'product', 'publish', 'product_cat' ], $term_ids, [ $limit ] ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return array_map( 'intval', (array) $ids );
+	}
+
+	/**
+	 * Published products by units sold: id => `total_sales`, most sold first, ties by id. Optional language filter by the `language`
+	 * taxonomy term id (Polylang stores a post's language as a term of that taxonomy). One statement.
+	 *
+	 * @param int $language_term Term id of the language (0 = no filter).
+	 * @param int $limit         Maximum rows.
+	 * @return array<int,int>
+	 */
+	public function top_selling( int $language_term, int $limit ): array {
+		global $wpdb;
+
+		if ( ! $this->available() || $limit < 1 ) {
+			return [];
+		}
+		$join = '';
+		$args = [];
+		if ( $language_term > 0 ) {
+			$join   = ' INNER JOIN ' . $wpdb->term_relationships . ' lr ON lr.object_id = p.ID INNER JOIN ' . $wpdb->term_taxonomy . ' lt ON lt.term_taxonomy_id = lr.term_taxonomy_id AND lt.taxonomy = %s AND lt.term_id = %d';
+			$args[] = 'language';
+			$args[] = $language_term;
+		}
+		$sql  = 'SELECT p.ID AS id, l.total_sales FROM ' . $wpdb->posts . ' p INNER JOIN ' . self::table() . ' l ON l.product_id = p.ID' . $join . '
+			WHERE p.post_type = %s AND p.post_status = %s' . Listable::sql( 'p' ) . ' ORDER BY l.total_sales DESC, p.ID ASC LIMIT %d';
+		$args = array_merge( $args, [ 'product', 'publish', $limit ] );
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$out  = [];
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = (int) $row['total_sales'];
+		}
+		return $out;
+	}
+
+	/**
+	 * Recommendation facts of an explicit id list (TASK-038): post status, price range, stock status, total sales and the catalog
+	 * visibility flag, in ONE statement. Rows of other post types are ignored; a product without a lookup row answers `has_row` false.
+	 * Null when the table is missing.
+	 *
+	 * @param int[] $ids            Product ids (at most MAX_SCOPE are read).
+	 * @param int   $hidden_term_tt `exclude-from-catalog` term_taxonomy_id (0 = none).
+	 * @return array<int,array{status:string,protected:bool,min:float,max:float,stock:string,sales:int,hidden:bool,has_row:bool}>|null
+	 */
+	public function candidate_facts( array $ids, int $hidden_term_tt ): ?array {
+		global $wpdb;
+
+		$ids = array_slice( array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) ), 0, self::MAX_SCOPE );
+		if ( ! $this->available() ) {
+			return null;
+		}
+		if ( array() === $ids ) {
+			return [];
+		}
+
+		$hidden = $hidden_term_tt > 0
+			? 'EXISTS( SELECT 1 FROM ' . $wpdb->term_relationships . ' hr WHERE hr.object_id = p.ID AND hr.term_taxonomy_id = %d )'
+			: '0';
+		$sql    = 'SELECT p.ID AS id, p.post_status AS status, p.post_password AS pw, l.product_id AS lookup_id, l.min_price, l.max_price, l.stock_status, l.total_sales, ' . $hidden . ' AS hidden
+			FROM ' . $wpdb->posts . ' p
+			LEFT JOIN ' . self::table() . ' l ON l.product_id = p.ID
+			WHERE p.post_type = %s AND p.ID IN ( ' . $this->placeholders_d( $ids ) . ' )';
+		$args   = array_merge( $hidden_term_tt > 0 ? [ $hidden_term_tt ] : [], [ 'product' ], $ids );
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$out  = [];
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = [
+				'status'    => (string) $row['status'],
+				'protected' => '' !== (string) $row['pw'],
+				'min'       => (float) $row['min_price'],
+				'max'       => (float) $row['max_price'],
+				'stock'     => (string) $row['stock_status'],
+				'sales'     => (int) $row['total_sales'],
+				'hidden'    => 1 === (int) $row['hidden'],
+				'has_row'   => null !== $row['lookup_id'],
+			];
+		}
+		return $out;
 	}
 
 	/**

@@ -51,6 +51,8 @@ final class Conflicts {
 		'perf'      => [ 'autoptimize', 'perfmatters', 'wp-rocket', 'wp-asset-clean-up', 'wp-asset-clean-up-pro', 'litespeed-cache', 'wp-fastest-cache', 'w3-total-cache', 'wp-optimize', 'flying-press', 'fast-velocity-minify', 'nitropack', 'hummingbird-performance', 'sg-cachepress' ],
 		// Product filter / facet plugins: the catalog module owns the filters, counts, URLs and indexation rules of the listing. Slugs from wordpress.org (2026-11).
 		'filter'    => [ 'woocommerce-products-filter', 'facetwp', 'jet-smart-filters', 'woo-product-filter', 'filter-everything', 'woocommerce-ajax-filters', 'yith-woocommerce-ajax-navigation' ],
+		// Related / upsell / frequently-bought-together plugins: the recommend module owns related products, upsells and cross-sells output. Slugs from wordpress.org (2026-11); the Woo extension is a premium folder name.
+		'recommend' => [ 'yith-woocommerce-frequently-bought-together', 'yith-woocommerce-related-products', 'woocommerce-product-recommendations', 'woo-related-products-refresh-on-reload', 'wc-frequently-bought-together', 'cartflows-pro', 'wpc-frequently-bought-together', 'wpc-related-products', 'woo-product-recommendations' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -136,6 +138,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Rank Math → Загальні налаштування → Посилання → «Redirect Attachments» увімкнено, адреса за замовчуванням = головна сайту (або `wp vextra seo apply-config`).', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
+				'id'       => 'rankmath-password-noindex',
+				'title'    => static fn(): string => __( 'Rank Math: захищені паролем сторінки й товари не мають noindex', 'vextra-core' ),
+				'module'   => 'seo',
+				'detector' => fn() => $this->detect_rankmath_password_noindex(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Rank Math → Titles & Meta → Misc → «Noindex Password-protected Pages» має бути увімкнено (або `wp vextra seo apply-config`): такі товари не рекламуються у списках, а сторінка не має потрапляти в індекс.', 'vextra-core' ),
 				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
@@ -246,6 +258,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => true,
 				'fix_hint' => static fn(): string => __( 'Фільтри, лічильники, URL і правила індексації списку товарів веде vextra-core. Другий плагін фільтрів створює власні параметри URL (дублі в індексі) та запити: деактивуйте його.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-recommendation-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін схожих / супутніх товарів: модуль recommend вимкнено', 'vextra-core' ),
+				'module'   => 'recommend',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['recommend'] ),
+				'action'   => self::ACTION_YIELD,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Схожі товари, апсейли та крос-сейли веде vextra-core (один рушій рекомендацій). Деактивуйте плагін, модуль увімкнеться сам; до того працюють рідні схожі товари WooCommerce.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
@@ -470,6 +492,17 @@ final class Conflicts {
 			return false;
 		}
 		return ! $this->is_on( $rank->setting( 'general.redirections_post_redirect', 'off' ) );
+	}
+
+	/**
+	 * Password-protected posts / products are `noindex` (their URL stays reachable, but must not enter the index).
+	 */
+	private function detect_rankmath_password_noindex(): bool {
+		$rank = Plugin::instance()->integration( 'rankmath' );
+		if ( ! $rank instanceof RankMath || ! $rank->is_available() || ! $this->module_active( 'seo' ) ) {
+			return false;
+		}
+		return ! $this->is_on( $rank->setting( 'titles.noindex_password_protected', 'off' ) );
 	}
 
 	/**

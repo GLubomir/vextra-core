@@ -22,6 +22,7 @@ namespace Vextra\Core\Catalog;
 
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Plugin;
+use Vextra\Core\Support\Listable;
 
 final class Query {
 
@@ -320,21 +321,23 @@ final class Query {
 			}
 		}
 
-		return [
-			'post_type'              => 'product',
-			'post_status'            => 'publish',
-			'post__in'               => array() === $ids ? [ 0 ] : $ids,
-			'orderby'                => 'post__in',
-			'posts_per_page'         => Params::PER_PAGE,
-			'paged'                  => max( 1, $paged ),
-			'ignore_sticky_posts'    => true,
-			'fields'                 => 'ids',
-			'no_found_rows'          => false,
-			'lang'                   => '', // The id list is already language-bound (SaleProducts).
-			'tax_query'              => $tax_query, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
-			'vx_catalog'             => $context,
-			'update_post_meta_cache' => false,
-			'update_post_term_cache' => false,
-		];
+		return Listable::apply(
+			[
+				'post_type'           => 'product',
+				'post_status'         => 'publish',
+				'post__in'            => array() === $ids ? [ 0 ] : $ids,
+				'orderby'             => 'post__in',
+				'posts_per_page'      => Params::PER_PAGE,
+				'paged'               => max( 1, $paged ),
+				'ignore_sticky_posts' => true,
+				'fields'              => 'ids',
+				'no_found_rows'       => false,
+				'lang'                => '', // The id list is already language-bound (SaleProducts).
+				'tax_query'           => $tax_query, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query
+			'vx_catalog'              => $context,
+			'update_post_meta_cache'  => false,
+			'update_post_term_cache'  => false,
+			]
+		);
 	}
 }
