@@ -145,53 +145,6 @@ final class Rest {
 	 * @return array<int,array{id:int,src:string,html:string}>
 	 */
 	private function with_markup( array $items, string $lang ): array {
-		$out = [];
-		foreach ( $items as $item ) {
-			$out[] = $item + [ 'html' => '' ];
-		}
-		if ( array() === $out || ! function_exists( 'vx_component' ) ) {
-			return $out;
-		}
-
-		$switched = $this->switch_locale( $lang );
-		if ( class_exists( '\Vextra\Theme\Woo\ProductCardData' ) ) {
-			\Vextra\Theme\Woo\ProductCardData::prime_catalog( array_column( $out, 'id' ) );
-		}
-		foreach ( $out as $i => $item ) {
-			ob_start();
-			vx_component(
-				'product-card',
-				[
-					'product'    => $item['id'],
-					'variant'    => 'grid',
-					'heading'    => 'h3',
-					'image_size' => 'vx-product-card',
-					'lazy'       => true,
-					'cache'      => true,
-				]
-			);
-			$out[ $i ]['html'] = trim( (string) ob_get_clean() );
-			if ( '' === $out[ $i ]['html'] ) {
-				unset( $out[ $i ] ); // The card cannot be shown (product trashed since the bundle was built): skip it.
-			}
-		}
-		if ( $switched ) {
-			restore_previous_locale();
-		}
-		return array_values( $out );
-	}
-
-	/**
-	 * Render in the language of the list when the request locale differs (REST has no Polylang language context of its own).
-	 *
-	 * @param string $lang Language slug.
-	 */
-	private function switch_locale( string $lang ): bool {
-		$pll = Plugin::instance()->integration( 'polylang' );
-		if ( '' === $lang || ! $pll instanceof Polylang ) {
-			return false;
-		}
-		$locale = $pll->locale_of( $lang );
-		return '' !== $locale && determine_locale() !== $locale && switch_to_locale( $locale );
+		return CardMarkup::attach( $items, $lang );
 	}
 }

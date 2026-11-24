@@ -128,6 +128,17 @@ final class Store {
 	}
 
 	/**
+	 * Option names of the cached product bundle entry (value + timeout), for one combined `wp_prime_option_caches()` of a product page.
+	 *
+	 * @param int    $id   Product id (cache language).
+	 * @param string $lang Language slug.
+	 * @return string[]
+	 */
+	public static function option_names( int $id, string $lang ): array {
+		return Cache::swr_option_names( self::GROUP, 'product:' . $id . ':' . $lang . ':' . self::VERSION );
+	}
+
+	/**
 	 * Cached bundle of a cart signature (bounded cache).
 	 *
 	 * @param int[]  $ids  Cart product ids in the cache language, ascending.

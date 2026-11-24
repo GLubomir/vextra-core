@@ -30,6 +30,7 @@ final class Schema {
 		$this->rank_math->filter_product_entity( [ $this, 'product' ] );
 		$this->rank_math->filter_json_ld( [ $this, 'home_graph' ] );
 		$this->rank_math->filter_json_ld( [ $this, 'sale_graph' ] );
+		$this->rank_math->filter_json_ld( [ $this, 'product_ratings' ] );
 	}
 
 	/**
@@ -108,5 +109,28 @@ final class Schema {
 			$entity['name'] = $name;
 		}
 		return $entity;
+	}
+
+	/**
+	 * Google review snippet policy: a Product with no approved review must not carry `aggregateRating` / `review` (TASK-044a fix round 1).
+	 * Stored Woo counters can be stale or imported; the approved reviews are the truth (`Product\ReviewsData::approved_count()`, memoised by the page).
+	 *
+	 * @param mixed $graph JSON-LD nodes.
+	 * @return mixed
+	 */
+	public function product_ratings( $graph ) {
+		if ( ! is_array( $graph ) || ! is_singular( 'product' ) ) {
+			return $graph;
+		}
+		$id = (int) get_queried_object_id();
+		foreach ( $graph as $key => $node ) {
+			if ( ! is_array( $node ) || ( ! isset( $node['aggregateRating'] ) && ! isset( $node['review'] ) ) || ! array_intersect( [ 'Product', 'ProductGroup' ], (array) ( $node['@type'] ?? [] ) ) ) {
+				continue;
+			}
+			if ( 0 === \Vextra\Core\Product\ReviewsData::approved_count( $id ) ) {
+				unset( $graph[ $key ]['aggregateRating'], $graph[ $key ]['review'] );
+			}
+		}
+		return $graph;
 	}
 }

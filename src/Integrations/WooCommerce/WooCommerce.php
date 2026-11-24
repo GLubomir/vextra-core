@@ -274,4 +274,78 @@ final class WooCommerce extends AbstractIntegration {
 		}
 		return $out;
 	}
+
+	/**
+	 * Review counters of a product: the stored ones and the ones recomputed from APPROVED reviews only, with Woo's own public helpers
+	 * (`WC_Comments::get_*_for_product()`, uncached SQL, nothing is saved). `[ 'stored' => [...], 'fresh' => [...] ]` or null.
+	 *
+	 * @param int $product_id Product id.
+	 * @return array{stored:array<string,mixed>,fresh:array<string,mixed>}|null
+	 */
+	public function review_counters( int $product_id ): ?array {
+		if ( ! $this->is_available() || ! class_exists( 'WC_Comments' ) ) {
+			return null;
+		}
+		$product = wc_get_product( $product_id );
+		if ( ! $product instanceof \WC_Product ) {
+			return null;
+		}
+		return [
+			'stored' => [
+				'count'  => (int) $product->get_review_count( 'edit' ),
+				'avg'    => (string) round( (float) $product->get_average_rating( 'edit' ), 2 ),
+				'counts' => (array) $product->get_rating_counts( 'edit' ),
+			],
+			'fresh'  => [
+				'count'  => (int) \WC_Comments::get_review_count_for_product( $product ),
+				'avg'    => (string) round( (float) \WC_Comments::get_average_rating_for_product( $product ), 2 ),
+				'counts' => (array) \WC_Comments::get_rating_counts_for_product( $product ),
+			],
+		];
+	}
+
+	/**
+	 * Store the recomputed review counters (`WC_Comments::clear_transients()`: the very routine Woo runs on a comment change).
+	 *
+	 * @param int $product_id Product id.
+	 */
+	public function recount_reviews( int $product_id ): void {
+		if ( $this->is_available() && class_exists( 'WC_Comments' ) ) {
+			\WC_Comments::clear_transients( $product_id );
+		}
+	}
+
+	/**
+	 * Ids of products whose stored rating counter says reviews exist while no approved top-level review comment does (SELECT on the Woo
+	 * product lookup table, `rating_count`; INTERNAL read, docs/compat/integrations.md). Fallback: [].
+	 *
+	 * @param int $limit Max ids.
+	 * @return int[]
+	 */
+	public function products_with_phantom_ratings( int $limit = 200 ): array {
+		global $wpdb;
+		if ( ! $this->is_available() || ! isset( $wpdb->wc_product_meta_lookup ) ) {
+			return [];
+		}
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT l.product_id FROM {$wpdb->wc_product_meta_lookup} l
+				INNER JOIN {$wpdb->posts} p ON p.ID = l.product_id AND p.post_type = 'product' AND p.post_status <> 'trash'
+				WHERE l.rating_count > 0
+				AND NOT EXISTS ( SELECT 1 FROM {$wpdb->comments} c WHERE c.comment_post_ID = l.product_id AND c.comment_approved = '1' AND c.comment_parent = 0 )
+				LIMIT %d",
+				$limit
+			)
+		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery
+		return array_map( 'intval', (array) $ids );
+	}
+
+	/**
+	 * Store low-stock threshold (option `woocommerce_notify_low_stock_amount`, default 2). Fallback: 2.
+	 */
+	public function low_stock_threshold(): int {
+		return $this->is_available() ? max( 0, (int) get_option( 'woocommerce_notify_low_stock_amount', 2 ) ) : 2;
+	}
 }

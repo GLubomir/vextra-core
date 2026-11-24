@@ -19,6 +19,7 @@ declare(strict_types=1);
 namespace Vextra\Core\Compat;
 
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Plugin;
 use Vextra\Core\Reviews\Options as ReviewOptions;
 use Vextra\Core\Security\TwoFactorPolicy;
@@ -53,6 +54,8 @@ final class Conflicts {
 		'filter'    => [ 'woocommerce-products-filter', 'facetwp', 'jet-smart-filters', 'woo-product-filter', 'filter-everything', 'woocommerce-ajax-filters', 'yith-woocommerce-ajax-navigation' ],
 		// Related / upsell / frequently-bought-together plugins: the recommend module owns related products, upsells and cross-sells output. Slugs from wordpress.org (2026-11); the Woo extension is a premium folder name.
 		'recommend' => [ 'yith-woocommerce-frequently-bought-together', 'yith-woocommerce-related-products', 'woocommerce-product-recommendations', 'woo-related-products-refresh-on-reload', 'wc-frequently-bought-together', 'cartflows-pro', 'wpc-frequently-bought-together', 'wpc-related-products', 'woo-product-recommendations' ],
+		// Variation swatch / product gallery / sticky add-to-cart plugins: the product module + theme own the gallery, swatches and buy box. Slugs from wordpress.org (2026-11).
+		'pdp'       => [ 'woo-variation-swatches', 'variation-swatches-for-woocommerce', 'woo-variation-gallery', 'yith-woocommerce-color-label-variations', 'yith-woocommerce-color-and-label-variations', 'woo-product-gallery-slider', 'sticky-add-to-cart-for-woocommerce', 'wpc-variations-radio-buttons', 'wpc-variation-swatches', 'wpc-product-gallery', 'woo-variation-swatches-pro' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -261,6 +264,16 @@ final class Conflicts {
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
+				'id'       => 'duplicate-pdp-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін зразків варіацій / галереї / липкої кнопки: модуль product вимкнено', 'vextra-core' ),
+				'module'   => 'product',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['pdp'] ),
+				'action'   => self::ACTION_YIELD,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Галерею, зразки варіацій і блок покупки веде vextra-core + тема. Другий плагін дублює розмітку й скрипти: деактивуйте його, модуль увімкнеться сам; до того працює стандартна сторінка товару WooCommerce.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
 				'id'       => 'duplicate-recommendation-plugin',
 				'title'    => static fn(): string => __( 'Активний плагін схожих / супутніх товарів: модуль recommend вимкнено', 'vextra-core' ),
 				'module'   => 'recommend',
@@ -288,6 +301,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => true,
 				'fix_hint' => static fn(): string => __( 'Виконайте `wp vextra reviews reconcile` (значення в БД). Якщо розбіжність лишається, плагін фільтрує опцію через option_* / pre_option_*: вимкніть цей фільтр.', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
+				'id'       => 'rating-meta-without-reviews',
+				'title'    => static fn(): string => __( 'Лічильник відгуків / рейтинг товару без жодного схваленого відгуку (Rank Math друкує AggregateRating)', 'vextra-core' ),
+				'module'   => 'reviews',
+				'detector' => fn() => $this->detect_phantom_ratings(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Виконайте `wp vextra reviews recount`. Імпорт постачальника не має писати _wc_review_count / _wc_average_rating / _wc_rating_count.', 'vextra-core' ),
 				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
@@ -583,6 +606,20 @@ final class Conflicts {
 		}
 		$bad = array_unique( array_merge( array_keys( ReviewOptions::drift() ), array_keys( ReviewOptions::overridden() ) ) );
 		return array() === $bad ? false : implode( ', ', array_slice( $bad, 0, 10 ) ) . ( count( $bad ) > 10 ? '…' : '' );
+	}
+
+	/**
+	 * Products whose rating counter says reviews exist while no approved review does (SEO: phantom AggregateRating).
+	 *
+	 * @return string|false
+	 */
+	private function detect_phantom_ratings() {
+		$woo = Plugin::instance()->integration( 'woocommerce' );
+		if ( ! $this->module_active( 'reviews' ) || ! $woo instanceof WooCommerce ) {
+			return false;
+		}
+		$ids = $woo->products_with_phantom_ratings( 20 );
+		return array() === $ids ? false : '#' . implode( ', #', $ids );
 	}
 
 	/**
