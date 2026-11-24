@@ -28,6 +28,11 @@ final class Engine {
 	private const SOURCE_CAP = 40;
 
 	/**
+	 * Raw related candidates (4 tiers of Related::TIER_CAP).
+	 */
+	private const RELATED_CAP = 120;
+
+	/**
 	 * Context => list names a bundle holds.
 	 */
 	public const LISTS = [ 'accessories', 'related', 'post_add' ];
@@ -217,7 +222,7 @@ final class Engine {
 			'upsell'    => self::cap( ( new WooLinks( 'upsell' ) )->candidates( $anchor ) ),
 			'cross'     => self::cap( ( new WooLinks( 'cross' ) )->candidates( $anchor ) ),
 			'accessory' => self::cap( ( new Accessories() )->candidates( $anchor ) ),
-			'related'   => self::cap( ( new Related() )->candidates( $anchor ) ),
+			'related'   => self::cap( ( new Related() )->candidates( $anchor ), self::RELATED_CAP ),
 		];
 
 		Pool::facts( array_merge( array_column( $raw['upsell'], 'id' ), array_column( $raw['cross'], 'id' ), array_column( $raw['accessory'], 'id' ), array_column( $raw['related'], 'id' ) ) ); // ONE read for every list.
@@ -268,7 +273,7 @@ final class Engine {
 		foreach ( $anchors as $anchor ) {
 			$cross     = self::cap( ( new WooLinks( 'cross' ) )->candidates( $anchor ) );
 			$accessory = self::cap( ( new Accessories() )->candidates( $anchor ) );
-			$rel       = self::cap( ( new Related() )->candidates( $anchor ) );
+			$rel       = self::cap( ( new Related() )->candidates( $anchor ), self::RELATED_CAP );
 
 			$manual[]                     = array_merge( $cross, $accessory );
 			$related[]                    = $rel;
@@ -331,10 +336,11 @@ final class Engine {
 	 * Bound a source's candidates.
 	 *
 	 * @param array<int,array> $items Candidates.
+	 * @param int              $limit Maximum kept.
 	 * @return array<int,array>
 	 */
-	private static function cap( array $items ): array {
-		return array_slice( $items, 0, self::SOURCE_CAP );
+	private static function cap( array $items, int $limit = self::SOURCE_CAP ): array {
+		return array_slice( $items, 0, $limit );
 	}
 
 	/**

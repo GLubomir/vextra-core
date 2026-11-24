@@ -252,6 +252,38 @@ final class Lookup {
 	}
 
 	/**
+	 * Published products by units sold: id => `total_sales`, most sold first, ties by id. Optional language filter by the `language`
+	 * taxonomy term id (Polylang stores a post's language as a term of that taxonomy). One statement.
+	 *
+	 * @param int $language_term Term id of the language (0 = no filter).
+	 * @param int $limit         Maximum rows.
+	 * @return array<int,int>
+	 */
+	public function top_selling( int $language_term, int $limit ): array {
+		global $wpdb;
+
+		if ( ! $this->available() || $limit < 1 ) {
+			return [];
+		}
+		$join = '';
+		$args = [];
+		if ( $language_term > 0 ) {
+			$join   = ' INNER JOIN ' . $wpdb->term_relationships . ' lr ON lr.object_id = p.ID INNER JOIN ' . $wpdb->term_taxonomy . ' lt ON lt.term_taxonomy_id = lr.term_taxonomy_id AND lt.taxonomy = %s AND lt.term_id = %d';
+			$args[] = 'language';
+			$args[] = $language_term;
+		}
+		$sql  = 'SELECT p.ID AS id, l.total_sales FROM ' . $wpdb->posts . ' p INNER JOIN ' . self::table() . ' l ON l.product_id = p.ID' . $join . '
+			WHERE p.post_type = %s AND p.post_status = %s ORDER BY l.total_sales DESC, p.ID ASC LIMIT %d';
+		$args = array_merge( $args, [ 'product', 'publish', $limit ] );
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$out  = [];
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = (int) $row['total_sales'];
+		}
+		return $out;
+	}
+
+	/**
 	 * Recommendation facts of an explicit id list (TASK-038): post status, price range, stock status, total sales and the catalog
 	 * visibility flag, in ONE statement. Rows of other post types are ignored; a product without a lookup row answers `has_row` false.
 	 * Null when the table is missing.

@@ -1,6 +1,6 @@
 <?php
 /**
- * Ranking stage (TASK-038): source priority (manual upsell / cross-sell > accessory > related), then the anchor's partner first
+ * Ranking stage (TASK-038): source priority (manual upsell / cross-sell > accessory > related), then the related tier (leaf, parent, top-level, bestsellers), then the anchor's partner first
  * (`_vx_partner_id`; empty = the store's default partner, one partner), then the in-source order. Stable (PHP 8 sort); never drops an
  * item. Margin weight is NOT applied (Phase 2).
  *
@@ -36,7 +36,7 @@ final class Ranker {
 		$index         = [];
 		foreach ( $items as $i => $item ) {
 			$same             = $partner_first && ( (string) ( $facts[ $item['id'] ]['partner'] ?? '' ) === $partner ) ? 0 : 1;
-			$index[ $i ]      = [ self::PRIORITY[ $item['src'] ] ?? 9, $same, $i ];
+			$index[ $i ]      = [ self::PRIORITY[ $item['src'] ] ?? 9, (int) ( $item['meta']['tier'] ?? 0 ), $same, $i ];
 			$items[ $i ]['p'] = (string) ( $facts[ $item['id'] ]['partner'] ?? '' );
 		}
 		uasort( $index, static fn( array $a, array $b ): int => $a <=> $b );

@@ -3,12 +3,12 @@
  * DEV ONLY (TASK-038). Asserts the numbers of the Recommend engine on the local site, with TEMP data (`t038-*`) that is deleted at the end.
  *
  * Run: `wp eval-file wp-content/plugins/vextra-core/scripts/dev/check-recommend.php`
- * Stages (env `VX_T038_STAGE`): unset = full matrix; `seed` = only the idempotent demo partner seed; `cleanup` = delete every `t038-*` leftover.
+ * Stages (env `VX_T038_STAGE`): unset = full matrix (touches no demo data); `seed` = the documented, idempotent demo partner seed
+ * (`_vx_partner_id` = `demo-a` on demo products 1092 / 1093); `cleanup` = delete every `t038-*` leftover.
  *
  * Covers: determinism, sources, filters (stale / hidden / draft / OOS / price band), language, partner priority, cart / post_add contexts,
  * cache + invalidation triggers (stale-while-revalidate, deduped job), cold query budget, attribution, fields, conflict guard, kill switch,
- * edge cases, internal-link spread of the related block. Exit code 1 on any FAIL. Never touches demo data except the idempotent seed of
- * `_vx_partner_id` on two demo products (`demo-a`).
+ * edge cases, internal-link spread of the related block. Exit code 1 on any FAIL. Never touches demo data.
  *
  * @package Vextra\Core
  */
@@ -86,9 +86,9 @@ $seed = static function (): array {
 	}
 	return $done;
 };
-$seeded = $seed();
-WP_CLI::line( 'Demo partner seed: ' . ( array() === $seeded ? 'already in place' : 'set on ' . implode( ',', $seeded ) ) );
 if ( 'seed' === $stage ) {
+	$seeded = $seed();
+	WP_CLI::success( 'Demo partner seed (documented in docs/system/modules/recommend.md): ' . ( array() === $seeded ? 'already in place' : 'set on ' . implode( ',', $seeded ) ) );
 	return;
 }
 
@@ -638,11 +638,14 @@ try {
 	// ------------------------------------------------------------------------------------------------------------ edge cases
 	WP_CLI::line( 'Edge cases' );
 	$nocat = $mk( 'nocat', 100, [] );
-	$ok( array() === Engine::explain( 'product', [ $nocat ], 'uk' )['lists']['related'], 'product without categories: empty related, no error' );
+	$nr = Engine::explain( 'product', [ $nocat ], 'uk' )['lists']['related'];
+	$ok( array() !== $nr && 4 === (int) Engine::explain( 'product', [ $nocat ], 'uk' )['trace']['lists']['related']['ranked'][0]['meta']['tier'], 'product without a category: no error, filled by the bestseller tier' );
 	$only_one = $mk( 'solo-in-cat', 100, [ $cat_c ] );
-	$ok( array() === Engine::explain( 'product', [ $only_one ], 'uk' )['lists']['related'], 'product alone in its category and without parent: empty' );
+	$alone = Engine::explain( 'product', [ $only_one ], 'uk' )['trace']['lists']['related']['ranked'];
+	$ok( array() === array_filter( $alone, static fn( array $i ): bool => $i['meta']['tier'] < 4 ), 'product alone in its category and without parent: only the bestseller tier' );
 	$one_cand = $mk( 'solo-mate', 100, [ $cat_c ] );
-	$ok( 1 === count( Engine::explain( 'product', [ $only_one ], 'uk' )['lists']['related'] ), 'product with exactly one candidate: one item' );
+	$one = Engine::explain( 'product', [ $only_one ], 'uk' )['trace']['lists']['related']['ranked'];
+	$ok( isset( $one[0] ) && $one_cand === $one[0]['id'] && 1 === $one[0]['meta']['tier'], 'product with exactly one same-category candidate: it comes first, the bestsellers follow' );
 	// Only out-of-stock accessories -> accessories list empty, post_add falls through to related.
 	$oos_t = $mk( 'oos-target', 100, [ $cat_b ], [ 'stock' => 'outofstock' ] );
 	foreach ( [ $X1, $X2, $C_acc ] as $x ) {
@@ -699,6 +702,46 @@ try {
 	$no_pll = Engine::explain( 'product', [ $A ], '' );
 	remove_filter( 'vextra/core/integration_available', $off_pll, 10 );
 	$ok( array() !== $no_pll['lists']['related'] && '' === Pool::language_of( $A ) || true, 'Polylang inactive: no twin mapping, no crash' );
+
+	// ------------------------------------------------------------------------------------------------------------ related fill tiers
+	WP_CLI::line( 'Related fill tiers (N = 4 wherever >= 4 eligible products exist)' );
+	$published_all = array_values( array_diff( get_posts( [ 'post_type' => 'product', 'post_status' => 'publish', 'fields' => 'ids', 'numberposts' => -1, 'suppress_filters' => true, 'lang' => '' ] ), $state['products'] ) );
+	$short         = [];
+	$counts        = [];
+	foreach ( $published_all as $pid ) {
+		$lang = $pll->post_language( $pid );
+		$n    = count( Engine::explain( 'product', [ $pid ], $lang )['lists']['related'] );
+		$counts[ $pid ] = $n;
+		if ( $n < 4 ) {
+			// Eligible = same language, in stock, visible, inside the price band of this anchor (+ the anchor itself excluded).
+			$band  = Config::price_band();
+			$mine  = Pool::light( [ $pid ] )[ $pid ];
+			$elig  = 0;
+			foreach ( $published_all as $other ) {
+				if ( $other === $pid || $pll->post_language( $other ) !== $lang ) {
+					continue;
+				}
+				$f = Pool::light( [ $other ] )[ $other ];
+				if ( array() !== $f && ! $f['hidden'] && in_array( $f['stock'], [ 'instock', 'onbackorder' ], true ) && $f['min'] >= $mine['min'] * $band['min'] && $f['min'] <= $mine['min'] * $band['max'] ) {
+					++$elig;
+				}
+			}
+			if ( $elig >= 4 ) {
+				$short[] = $pid . '(' . $n . ' of ' . $elig . ')';
+			}
+		}
+	}
+	$ok( array() === $short, 'every product gets 4 related cards when >= 4 eligible products exist', implode( ',', $short ) );
+	$ok( true, 'cards per product reported', 'distribution ' . wp_json_encode( array_count_values( array_map( static fn( int $n ): int => min( 4, $n ), $counts ) ) ) );
+	$kitchen = Engine::explain( 'product', [ 1096 ], 'uk' )['trace']['lists']['related']['ranked'];
+	$tiers   = array_map( static fn( array $i ): int => (int) $i['meta']['tier'], $kitchen );
+	$sorted  = $tiers;
+	sort( $sorted );
+	$ok( $tiers === $sorted && in_array( 4, $tiers, true ), 'thin category: tiers stay ordered and the bestseller tier fills', wp_json_encode( array_slice( $tiers, 0, 8 ) ) );
+	$dem = array_column( Engine::explain( 'product', [ 1096 ], 'uk' )['lists']['related'], 'id' );
+	$ok( count( $dem ) >= 4 && array() === array_filter( $dem, static fn( int $id ): bool => 'uk' !== $pll->post_language( $id ) ), 'filled cards are language pure (UA)' );
+	$dem = array_column( Engine::explain( 'product', [ 1097 ], 'ru' )['lists']['related'], 'id' );
+	$ok( count( $dem ) >= 4 && array() === array_filter( $dem, static fn( int $id ): bool => 'ru' !== $pll->post_language( $id ) ), 'filled cards are language pure (RU)' );
 
 	// ------------------------------------------------------------------------------------------------------------ SEO internal-link spread
 	WP_CLI::line( 'Related internal-link spread (SEO review)' );

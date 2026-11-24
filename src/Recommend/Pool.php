@@ -125,6 +125,26 @@ final class Pool {
 	}
 
 	/**
+	 * Store-wide bestsellers of a language: product id => units sold, most sold first (`total_sales` of the lookup table), capped by
+	 * Config `scan`. Stock and visibility are left to the filters. Every language when Polylang is absent.
+	 *
+	 * @param string $lang Language slug ('' = every language).
+	 * @return array<int,int>
+	 */
+	public static function bestsellers( string $lang ): array {
+		$woo = self::woo();
+		if ( null === $woo ) {
+			return [];
+		}
+		$pll  = self::polylang();
+		$term = 0;
+		if ( null !== $pll && '' !== $lang ) {
+			$term = (int) array_search( $lang, $pll->language_term_map(), true );
+		}
+		return $woo->lookup()->top_selling( $term, max( 1, (int) Config::get( 'scan' ) ) );
+	}
+
+	/**
 	 * Load term objects (and queue their term meta for one lazy read) of many ids in ONE query. `get_terms()` is avoided on purpose:
 	 * Woo's `get_terms` filter writes a transient. Guarded core helper `_prime_term_caches()` (INTERNAL, docs/compat/integrations.md);
 	 * without it the terms are read one by one on first use.
