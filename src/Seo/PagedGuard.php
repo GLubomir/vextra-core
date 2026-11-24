@@ -22,11 +22,49 @@ use Vextra\Core\Guard\Failsafe;
 
 final class PagedGuard {
 
+	/**
+	 * Highest page number answered at all (SEC-063).
+	 */
+	private const MAX_PAGED = 10000;
+
+	/**
+	 * The main query was cut by clamp() (the 404 status is sent in guard()).
+	 *
+	 * @var bool
+	 */
+	private bool $clamped = false;
+
 	public function register(): void {
 		add_action( 'template_redirect', [ $this, 'guard' ], 5 );
+		add_action( 'pre_get_posts', [ $this, 'clamp' ], 0 );
+	}
+
+	/**
+	 * SEC-063: a page number above a sane ceiling (archives, search, `?paged=`) is a 404 BEFORE any query runs: `(paged - 1) * per_page`
+	 * overflows for huge values and the query answered 200 with an empty list.
+	 *
+	 * @param mixed $query Query.
+	 */
+	public function clamp( $query ): void {
+		if ( ! $query instanceof \WP_Query || ! $query->is_main_query() || is_admin() ) {
+			return;
+		}
+		$paged = $query->get( 'paged' );
+		if ( ! is_numeric( $paged ) || (float) $paged <= self::MAX_PAGED ) {
+			return;
+		}
+		$this->clamped = true;
+		$query->set_404();
+		$query->set( 'paged', 1 );
+		$query->set( 'no_found_rows', true );
+		add_filter( 'posts_pre_query', static fn( $posts, $q ) => $q === $query ? [] : $posts, 10, 2 );
 	}
 
 	public function guard(): void {
+		if ( $this->clamped ) {
+			$this->not_found();
+			return;
+		}
 		if ( is_admin() || is_404() ) {
 			return;
 		}
