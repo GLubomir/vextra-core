@@ -297,6 +297,18 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * Hook the candidate size list of the Open Graph / Twitter image (`rank_math/opengraph/image_sizes`, default `full`, `large`, `medium_large`):
+	 * the Media module restricts it to `full` so no WebP / AVIF sub-size becomes a social image.
+	 *
+	 * @param callable $callback Filter callback `( array $sizes )`.
+	 */
+	public function filter_og_image_sizes( callable $callback ): void {
+		if ( $this->is_available() ) {
+			add_filter( 'rank_math/opengraph/image_sizes', $callback, 20 );
+		}
+	}
+
+	/**
 	 * Hook the "enhanced data" pairs printed as `twitter:label<N>` / `twitter:data<N>` (Slack / X sharing): array of
 	 * `label => value` before Rank Math prints them (it numbers the tags itself, so removing one renumbers the rest).
 	 *
