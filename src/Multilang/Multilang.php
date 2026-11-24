@@ -49,6 +49,7 @@ final class Multilang implements ModuleInterface {
 
 		$sync = new ProductSync( $pll );
 
+		( new AttributeTranslation( $pll ) )->register();
 		( new WooPages( $pll, $rank ) )->register();
 		$sync->register();
 		$stock = new StockSync( $pll );

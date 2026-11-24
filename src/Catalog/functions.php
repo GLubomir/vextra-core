@@ -14,6 +14,7 @@ use Vextra\Core\Catalog\Params;
 use Vextra\Core\Catalog\SalePage;
 use Vextra\Core\Catalog\SaleProducts;
 use Vextra\Core\Catalog\TermData;
+use Vextra\Core\Multilang\AttributeTranslation;
 
 if ( ! function_exists( 'vx_catalog_context' ) ) {
 	/**
@@ -47,6 +48,17 @@ if ( ! function_exists( 'vx_catalog_term_data' ) ) {
 	 */
 	function vx_catalog_term_data( int $term_id ): array {
 		return TermData::bundle( $term_id );
+	}
+}
+
+if ( ! function_exists( 'vx_catalog_attribute_label' ) ) {
+	/**
+	 * Attribute label (Woo setting, Ukrainian source) in the current language; the cached facet bundle keeps the source label.
+	 *
+	 * @param string $label Source label.
+	 */
+	function vx_catalog_attribute_label( string $label ): string {
+		return AttributeTranslation::label( $label );
 	}
 }
 

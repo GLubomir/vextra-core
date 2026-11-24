@@ -201,9 +201,9 @@ final class Counts {
 		$out['term']       = [];
 		$out['shop_cards'] = [];
 		if ( 'category' === $kind ) {
-			$out['term'] = TermData::build( (int) $scope['term_id'] );
+			$out['term'] = TermData::build( (int) $scope['term_id'], (string) ( $scope['lang'] ?? '' ) );
 		} elseif ( 'search' === $kind && ! empty( $out['cats'][0]['id'] ) ) {
-			$out['term'] = TermData::build( (int) $out['cats'][0]['id'] );
+			$out['term'] = TermData::build( (int) $out['cats'][0]['id'], (string) ( $scope['lang'] ?? '' ) );
 		} elseif ( 'shop' === $kind ) {
 			$out['shop_cards'] = TermData::build_shop( (string) ( $scope['lang'] ?? '' ) );
 		}

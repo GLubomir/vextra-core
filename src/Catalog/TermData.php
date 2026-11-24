@@ -65,9 +65,9 @@ final class TermData {
 			self::GROUP,
 			'term:' . self::lang() . ':' . $term_id,
 			self::TTL,
-			fn(): array => self::build( $term_id )
+			fn(): array => self::build( $term_id, self::lang() )
 		);
-		return is_array( $data ) ? $data : self::build( $term_id );
+		return is_array( $data ) ? $data : self::build( $term_id, self::lang() );
 	}
 
 	/**
@@ -157,10 +157,12 @@ final class TermData {
 	/**
 	 * Cold build of a term bundle.
 	 *
-	 * @param int $term_id Term id.
+	 * @param int    $term_id Term id.
+	 * @param string $lang    Language slug of the cache scope ('' = the current request language). A background (SWR) rebuild has no request
+	 *                        language: without it the accessory targets stayed in the default language on the RU category.
 	 * @return array{children:array,siblings:array,parent:?array,accessories:array}
 	 */
-	public static function build( int $term_id ): array {
+	public static function build( int $term_id, string $lang = '' ): array {
 		$term = get_term( $term_id, 'product_cat' );
 		$out  = [
 			'children'    => [],
@@ -172,17 +174,17 @@ final class TermData {
 			return $out;
 		}
 
-		$out['children'] = self::children( $term_id );
+		$out['children'] = self::children( $term_id, $lang );
 		if ( $term->parent > 0 ) {
 			$parent = get_term( (int) $term->parent, 'product_cat' );
 			if ( $parent instanceof \WP_Term ) {
 				$out['parent'] = self::row( $parent );
 			}
 			if ( array() === $out['children'] ) {
-				$out['siblings'] = self::children( (int) $term->parent );
+				$out['siblings'] = self::children( (int) $term->parent, $lang );
 			}
 		}
-		$out['accessories'] = AccessoryRules::for_term( $term_id, self::counts() );
+		$out['accessories'] = AccessoryRules::for_term( $term_id, self::counts(), '' !== $lang ? $lang : self::lang() );
 		return $out;
 	}
 

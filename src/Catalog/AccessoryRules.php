@@ -59,12 +59,13 @@ final class AccessoryRules {
 	 *
 	 * @param int        $term_id Term id (any language).
 	 * @param TermCounts $counts  Hierarchical counts.
+	 * @param string     $lang    Language slug ('' = the current request language; a background rebuild passes its cache scope language).
 	 * @return array<int,array{term_id:int,name:string,url:string,count:int,thumb_id:int}>
 	 */
-	public static function for_term( int $term_id, TermCounts $counts ): array {
+	public static function for_term( int $term_id, TermCounts $counts, string $lang = '' ): array {
 		$out = [];
 		foreach ( self::own( TermPair::source( $term_id ) ) as $target ) {
-			$id = TermPair::in_language( $target );
+			$id = TermPair::in_language( $target, $lang );
 			if ( $id <= 0 || $counts->count( $id ) <= 0 ) {
 				continue;
 			}

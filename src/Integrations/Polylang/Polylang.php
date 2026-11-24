@@ -297,4 +297,26 @@ final class Polylang extends AbstractIntegration {
 		}
 		return $attachment_id;
 	}
+
+	/**
+	 * Register a translatable string (Polylang "Strings translations" screen).
+	 *
+	 * @param string $name  Label of the string in the admin list.
+	 * @param string $value Source string.
+	 * @param string $group Group title.
+	 */
+	public function register_string( string $name, string $value, string $group ): void {
+		if ( $this->is_ready() && function_exists( 'pll_register_string' ) ) {
+			pll_register_string( $name, $value, $group );
+		}
+	}
+
+	/**
+	 * Translation of a registered string in the current language (the source string when Polylang is not ready).
+	 *
+	 * @param string $value Source string.
+	 */
+	public function translate_string( string $value ): string {
+		return $this->is_ready() && function_exists( 'pll__' ) ? (string) pll__( $value ) : $value;
+	}
 }
