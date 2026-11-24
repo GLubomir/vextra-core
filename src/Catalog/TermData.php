@@ -110,10 +110,12 @@ final class TermData {
 	/**
 	 * Non-empty children of a parent id (0 = top level), default category excluded.
 	 *
-	 * @param int $parent_id Parent term id.
+	 * @param int    $parent_id Parent term id.
+	 * @param string $lang      Language slug of the build ('' = the current request language). A background rebuild (Action Scheduler) has no
+	 *                          request language, so the shop root passes the language of its cache scope.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private static function children( int $parent_id ): array {
+	private static function children( int $parent_id, string $lang = '' ): array {
 		$terms = get_terms(
 			[
 				'taxonomy'   => 'product_cat',
@@ -121,6 +123,8 @@ final class TermData {
 				'hide_empty' => false,
 				'exclude'    => self::default_ids(),
 				'orderby'    => 'name',
+				// Explicit language: the SWR rebuild runs without a request language and listed both languages on the shop root (TASK-043c).
+				'lang'       => '' !== $lang ? $lang : self::lang(),
 			]
 		);
 		$out   = [];
@@ -185,11 +189,12 @@ final class TermData {
 	/**
 	 * Cold build of the shop-root cards.
 	 *
+	 * @param string $lang Language slug of the cache scope ('' = the current request language).
 	 * @return array<int,array<string,mixed>>
 	 */
-	public static function build_shop(): array {
+	public static function build_shop( string $lang = '' ): array {
 		$out = [];
-		foreach ( self::children( 0 ) as $row ) {
+		foreach ( self::children( 0, $lang ) as $row ) {
 			$subs        = array_slice( self::children( (int) $row['id'] ), 0, 4 );
 			$row['subs'] = array_map(
 				static fn( array $sub ): array => [

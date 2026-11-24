@@ -205,7 +205,7 @@ final class Counts {
 		} elseif ( 'search' === $kind && ! empty( $out['cats'][0]['id'] ) ) {
 			$out['term'] = TermData::build( (int) $out['cats'][0]['id'] );
 		} elseif ( 'shop' === $kind ) {
-			$out['shop_cards'] = TermData::build_shop();
+			$out['shop_cards'] = TermData::build_shop( (string) ( $scope['lang'] ?? '' ) );
 		}
 		return $out;
 	}
