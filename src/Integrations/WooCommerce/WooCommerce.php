@@ -144,6 +144,91 @@ final class WooCommerce extends AbstractIntegration {
 	}
 
 	/**
+	 * `exclude-from-catalog` visibility term_taxonomy_id (0 when unknown). Fallback: 0.
+	 */
+	public function hidden_term_tt(): int {
+		if ( ! $this->is_available() || ! function_exists( 'wc_get_product_visibility_term_ids' ) ) {
+			return 0;
+		}
+		$ids = (array) wc_get_product_visibility_term_ids();
+		return (int) ( $ids['exclude-from-catalog'] ?? 0 );
+	}
+
+	/**
+	 * Parent-resolved product ids of a cart (variation -> parent), without starting a session: without an argument the cart is read
+	 * only when Woo has already loaded it (`WC()->cart`). Fallback: [].
+	 *
+	 * @param object|null $cart A `WC_Cart` (e.g. the filter argument of `woocommerce_cart_crosssell_ids`) or null for the current one.
+	 * @return int[]
+	 */
+	public function cart_product_ids( ?object $cart = null ): array {
+		if ( ! $this->is_available() || ! function_exists( 'WC' ) ) {
+			return [];
+		}
+		$cart = $cart ?? ( WC()->cart ?? null );
+		if ( ! is_object( $cart ) || ! method_exists( $cart, 'get_cart_contents' ) ) {
+			return [];
+		}
+		$ids = [];
+		foreach ( (array) $cart->get_cart_contents() as $item ) {
+			$id = is_array( $item ) ? absint( $item['product_id'] ?? 0 ) : 0;
+			if ( $id > 0 ) {
+				$ids[] = $id;
+			}
+		}
+		return array_values( array_unique( $ids ) );
+	}
+
+	/**
+	 * Load the cart (session + contents) for a REST request that needs it. Public Woo function `wc_load_cart()`. Fallback: no-op.
+	 */
+	public function load_cart(): void {
+		if ( $this->is_available() && function_exists( 'wc_load_cart' ) && function_exists( 'WC' ) && null === ( WC()->cart ?? null ) ) {
+			wc_load_cart();
+		}
+	}
+
+	/**
+	 * Upsell and cross-sell ids of a product (CRUD getters). Fallback: both empty.
+	 *
+	 * @param int $product_id Product id.
+	 * @return array{upsell:int[],cross:int[]}
+	 */
+	public function manual_links( int $product_id ): array {
+		$out = [
+			'upsell' => [],
+			'cross'  => [],
+		];
+		if ( ! $this->is_available() || ! function_exists( 'wc_get_product' ) || $product_id <= 0 ) {
+			return $out;
+		}
+		$product = wc_get_product( $product_id );
+		if ( ! $product instanceof \WC_Product ) {
+			return $out;
+		}
+		$out['upsell'] = array_values( array_filter( array_map( 'absint', $product->get_upsell_ids() ) ) );
+		$out['cross']  = array_values( array_filter( array_map( 'absint', $product->get_cross_sell_ids() ) ) );
+		return $out;
+	}
+
+	/**
+	 * Parent product id of a variation, the id itself for anything else. Core post API only (the post row is cached, no product object is
+	 * built). Fallback: the id.
+	 *
+	 * @param int $product_id Product or variation id.
+	 */
+	public function parent_id( int $product_id ): int {
+		if ( ! $this->is_available() || $product_id <= 0 ) {
+			return $product_id;
+		}
+		if ( 'product_variation' === get_post_type( $product_id ) ) {
+			$parent = (int) wp_get_post_parent_id( $product_id );
+			return $parent > 0 ? $parent : $product_id;
+		}
+		return $product_id;
+	}
+
+	/**
 	 * Guarded SQL adapter over Woo's product lookup table (the only direct SQL of the catalog module). Never null; every method
 	 * answers an empty value when the table is missing.
 	 */

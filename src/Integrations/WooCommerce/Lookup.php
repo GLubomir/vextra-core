@@ -228,6 +228,75 @@ final class Lookup {
 	}
 
 	/**
+	 * Published product ids of a set of `product_cat` terms (descendants already included by the caller), ascending, capped. One
+	 * statement (the WP_Query tax-query resolution costs three). Empty when the list is empty.
+	 *
+	 * @param int[] $term_ids Term ids.
+	 * @param int   $limit    Maximum ids.
+	 * @return int[]
+	 */
+	public function product_ids_in_terms( array $term_ids, int $limit ): array {
+		global $wpdb;
+
+		$term_ids = array_values( array_unique( array_filter( array_map( 'absint', $term_ids ) ) ) );
+		if ( array() === $term_ids || $limit < 1 ) {
+			return [];
+		}
+		$sql = 'SELECT DISTINCT p.ID FROM ' . $wpdb->posts . ' p
+			INNER JOIN ' . $wpdb->term_relationships . ' tr ON tr.object_id = p.ID
+			INNER JOIN ' . $wpdb->term_taxonomy . ' tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+			WHERE p.post_type = %s AND p.post_status = %s AND tt.taxonomy = %s AND tt.term_id IN ( ' . $this->placeholders_d( $term_ids ) . ' )
+			ORDER BY p.ID ASC LIMIT %d';
+		$ids = $wpdb->get_col( $wpdb->prepare( $sql, array_merge( [ 'product', 'publish', 'product_cat' ], $term_ids, [ $limit ] ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return array_map( 'intval', (array) $ids );
+	}
+
+	/**
+	 * Recommendation facts of an explicit id list (TASK-038): post status, price range, stock status, total sales and the catalog
+	 * visibility flag, in ONE statement. Rows of other post types are ignored; a product without a lookup row answers `has_row` false.
+	 * Null when the table is missing.
+	 *
+	 * @param int[] $ids            Product ids (at most MAX_SCOPE are read).
+	 * @param int   $hidden_term_tt `exclude-from-catalog` term_taxonomy_id (0 = none).
+	 * @return array<int,array{status:string,min:float,max:float,stock:string,sales:int,hidden:bool,has_row:bool}>|null
+	 */
+	public function candidate_facts( array $ids, int $hidden_term_tt ): ?array {
+		global $wpdb;
+
+		$ids = array_slice( array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) ), 0, self::MAX_SCOPE );
+		if ( ! $this->available() ) {
+			return null;
+		}
+		if ( array() === $ids ) {
+			return [];
+		}
+
+		$hidden = $hidden_term_tt > 0
+			? 'EXISTS( SELECT 1 FROM ' . $wpdb->term_relationships . ' hr WHERE hr.object_id = p.ID AND hr.term_taxonomy_id = %d )'
+			: '0';
+		$sql    = 'SELECT p.ID AS id, p.post_status AS status, l.product_id AS lookup_id, l.min_price, l.max_price, l.stock_status, l.total_sales, ' . $hidden . ' AS hidden
+			FROM ' . $wpdb->posts . ' p
+			LEFT JOIN ' . self::table() . ' l ON l.product_id = p.ID
+			WHERE p.post_type = %s AND p.ID IN ( ' . $this->placeholders_d( $ids ) . ' )';
+		$args   = array_merge( $hidden_term_tt > 0 ? [ $hidden_term_tt ] : [], [ 'product' ], $ids );
+
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$out  = [];
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = [
+				'status'  => (string) $row['status'],
+				'min'     => (float) $row['min_price'],
+				'max'     => (float) $row['max_price'],
+				'stock'   => (string) $row['stock_status'],
+				'sales'   => (int) $row['total_sales'],
+				'hidden'  => 1 === (int) $row['hidden'],
+				'has_row' => null !== $row['lookup_id'],
+			];
+		}
+		return $out;
+	}
+
+	/**
 	 * Term assignments of products for a taxonomy list: product id => [ taxonomy => term ids ].
 	 *
 	 * @param int[]    $ids        Product ids.

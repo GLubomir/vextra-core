@@ -2,7 +2,7 @@
 /**
  * Accessory rules store (TASK-043b, ADR-010 E4 slice): term meta `_vx_accessory_terms` on `product_cat` = list of target category ids
  * (default-language side, at most 8, admin order). The language twin resolves them through the Polylang term pair (no second admin
- * entry). TASK-038 `Recommend` will absorb this store as its `accessory rules` source.
+ * entry). Consumed by `Recommend\Source\Accessories` (TASK-038); a change of the term meta fires `vextra/catalog/accessory_rules_changed`.
  *
  * `for_term( $term_id )` answers `[ [ term_id, name, url, count, thumb_id ], ... ]` in the current language: only non-empty targets
  * (hierarchical `Seo\TermCounts`), admin order, at most 8, empty rule = []. Cached per language in the `catalog-terms` group by
@@ -22,6 +22,34 @@ final class AccessoryRules {
 	public const META = '_vx_accessory_terms';
 
 	public const MAX = 8;
+
+	/**
+	 * Fire `vextra/catalog/accessory_rules_changed` when the rule meta of a term is added, updated or deleted (core term meta hooks).
+	 */
+	public static function register(): void {
+		foreach ( [ 'added_term_meta', 'updated_term_meta', 'deleted_term_meta' ] as $hook ) {
+			add_action( $hook, [ self::class, 'on_meta' ], 10, 4 );
+		}
+	}
+
+	/**
+	 * Term meta changed.
+	 *
+	 * @param mixed $meta_id  Meta id(s).
+	 * @param mixed $term_id  Term id.
+	 * @param mixed $meta_key Meta key.
+	 */
+	public static function on_meta( $meta_id = 0, $term_id = 0, $meta_key = '' ): void {
+		unset( $meta_id );
+		if ( self::META === $meta_key ) {
+			/**
+			 * An accessory rule changed (cache invalidation trigger).
+			 *
+			 * @param int $term_id Source term id.
+			 */
+			do_action( 'vextra/catalog/accessory_rules_changed', absint( $term_id ) );
+		}
+	}
 
 	/**
 	 * Own target ids of a source term (admin field), validated: existing `product_cat` terms, not the term itself, unique, max 8.

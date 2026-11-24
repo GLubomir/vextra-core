@@ -92,6 +92,27 @@ final class Polylang extends AbstractIntegration {
 		return '';
 	}
 	/**
+	 * Language slug by the term id of the `language` taxonomy (the value `term_relationships` stores for a post): `[ 12 => 'uk', 15 => 'ru' ]`.
+	 * Public API only (`pll_languages_list` field maps).
+	 *
+	 * @return array<int,string>
+	 */
+	public function language_term_map(): array {
+		if ( ! $this->is_ready() || ! function_exists( 'pll_languages_list' ) ) {
+			return [];
+		}
+		$slugs = array_values( array_map( 'strval', (array) pll_languages_list( [ 'fields' => 'slug' ] ) ) );
+		$terms = array_values( array_map( 'intval', (array) pll_languages_list( [ 'fields' => 'term_id' ] ) ) );
+		$map   = [];
+		foreach ( $slugs as $i => $slug ) {
+			if ( isset( $terms[ $i ] ) && $terms[ $i ] > 0 ) {
+				$map[ $terms[ $i ] ] = $slug;
+			}
+		}
+		return $map;
+	}
+
+	/**
 	 * Hreflang base code (language part of the locale, e.g. `ru`) by language slug.
 	 *
 	 * @return array<string,string>
@@ -152,6 +173,20 @@ final class Polylang extends AbstractIntegration {
 		}
 		_prime_post_caches( $ids, false, false );
 		update_object_term_cache( $ids, $object_type );
+	}
+
+	/**
+	 * Warm the language and translation-group caches of a batch of terms in one go (core `update_object_term_cache()` on the object type
+	 * `term`, where Polylang stores both): later `term_language()` / `translate_term()` / `TermPair` lookups of those terms cost no query.
+	 * Core cache API only; should Polylang change its storage the call merely loses its effect.
+	 *
+	 * @param int[] $term_ids Term IDs.
+	 */
+	public function prime_terms( array $term_ids ): void {
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $term_ids ) ) ) );
+		if ( [] !== $ids && $this->is_ready() ) {
+			update_object_term_cache( $ids, 'term' );
+		}
 	}
 
 	/**
