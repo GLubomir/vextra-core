@@ -232,6 +232,47 @@ final class Cache {
 	}
 
 	/**
+	 * Remember a freshly written `remember()` entry in a capped list (option `vx_core_rows_<group>`): above `$cap` rows the OLDEST
+	 * transients are deleted. Bounds the table growth of groups keyed by free-form states. With an external object cache the TTL
+	 * alone bounds memory and this does nothing.
+	 *
+	 * @param string $group Group.
+	 * @param string $key   Key as passed to remember().
+	 * @param int    $cap   Maximum rows.
+	 */
+	public static function track( string $group, string $key, int $cap ): void {
+		if ( wp_using_ext_object_cache() ) {
+			return;
+		}
+		$option = 'vx_core_rows_' . sanitize_key( $group );
+		$rows   = get_option( $option, [] );
+		$rows   = is_array( $rows ) ? $rows : [];
+		$name   = 'vx_core_' . substr( $group, 0, 20 ) . '_' . md5( $key . self::version( $group ) );
+		$rows   = array_values( array_diff( $rows, [ $name ] ) );
+		$rows[] = $name;
+		$excess = count( $rows ) - $cap;
+		for ( $i = 0; $i < $excess; $i++ ) {
+			delete_transient( (string) array_shift( $rows ) );
+		}
+		update_option( $option, $rows, false );
+	}
+
+	/**
+	 * Option names (value + timeout) of the transient behind a `remember()` entry (for a combined prime). Empty with an external cache.
+	 *
+	 * @param string $group Group.
+	 * @param string $key   Key.
+	 * @return string[]
+	 */
+	public static function option_names( string $group, string $key ): array {
+		if ( wp_using_ext_object_cache() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return [];
+		}
+		$name = 'vx_core_' . substr( $group, 0, 20 ) . '_' . md5( $key . self::version( $group ) );
+		return [ '_transient_' . $name, '_transient_timeout_' . $name ];
+	}
+
+	/**
 	 * Option names (value + timeout) of the transients behind a SWR entry, for a combined `wp_prime_option_caches()` call.
 	 * Empty with an external object cache (reads are not queries there).
 	 *

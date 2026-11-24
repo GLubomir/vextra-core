@@ -27,9 +27,15 @@ final class CategoryCatalogFields {
 
 	private const NONCE_FIELD = 'vx_catalog_nonce';
 
+	public const META_H1 = '_vx_h1';
+
+	public const META_INTRO = '_vx_intro';
+
 	public function register(): void {
 		add_action( 'product_cat_edit_form_fields', [ $this, 'render' ], 20, 1 );
+		add_action( 'product_cat_add_form_fields', [ $this, 'render_add' ], 20, 0 );
 		add_action( 'edited_product_cat', [ $this, 'save' ], 10, 1 );
+		add_action( 'created_product_cat', [ $this, 'save' ], 10, 1 );
 	}
 
 	/**
@@ -45,6 +51,9 @@ final class CategoryCatalogFields {
 		$translation = TermPair::is_translation( $term_id );
 		$source      = TermPair::source( $term_id );
 
+		wp_nonce_field( self::NONCE_ACTION, self::NONCE_FIELD );
+		$this->render_text_fields( (string) get_term_meta( $term_id, self::META_H1, true ), (string) get_term_meta( $term_id, self::META_INTRO, true ), true );
+
 		if ( $translation ) {
 			$this->render_readonly( $term_id, $source );
 			return;
@@ -53,7 +62,6 @@ final class CategoryCatalogFields {
 		$selected = AccessoryRules::own( $term_id );
 		$choices  = $this->choices( $term_id, $selected );
 		$attrs    = FilterAttributes::own( $term_id );
-		wp_nonce_field( self::NONCE_ACTION, self::NONCE_FIELD );
 		?>
 		<tr class="form-field">
 			<th scope="row"><?php esc_html_e( 'Аксесуари категорії', 'vextra-core' ); ?></th>
@@ -82,6 +90,56 @@ final class CategoryCatalogFields {
 			</td>
 		</tr>
 		<?php
+	}
+
+	/**
+	 * "Add category" screen: only the per-language text fields (accessories / attributes need an existing term).
+	 */
+	public function render_add(): void {
+		if ( ! current_user_can( 'manage_product_terms' ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
+			return;
+		}
+		wp_nonce_field( self::NONCE_ACTION, self::NONCE_FIELD );
+		$this->render_text_fields( '', '', false );
+	}
+
+	/**
+	 * The H1 override and the short intro of a category (per language: Polylang twins are separate terms).
+	 *
+	 * @param string $h1    Stored H1.
+	 * @param string $intro Stored intro.
+	 * @param bool   $row   Edit screen (table rows) or add screen (div fields).
+	 */
+	private function render_text_fields( string $h1, string $intro, bool $row ): void {
+		$fields = [
+			[
+				'name'  => 'vx_cat_h1',
+				'label' => __( 'H1 категорії (необов’язково)', 'vextra-core' ),
+				'help'  => __( 'Якщо порожньо, H1 = назва категорії. Не довше 120 символів.', 'vextra-core' ),
+				'value' => $h1,
+				'type'  => 'input',
+			],
+			[
+				'name'  => 'vx_cat_intro',
+				'label' => __( 'Короткий вступ над списком', 'vextra-core' ),
+				'help'  => __( '1–2 речення над списком товарів (лише 1-ша сторінка). Дозволені посилання, <strong>, <em>. Довгий SEO-текст — в «Опис» нижче: він друкується під списком.', 'vextra-core' ),
+				'value' => $intro,
+				'type'  => 'textarea',
+			],
+		];
+		foreach ( $fields as $f ) {
+			$id = 'vx-' . $f['name'];
+			echo $row ? '<tr class="form-field"><th scope="row">' : '<div class="form-field">'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- literal markup.
+			echo '<label for="' . esc_attr( $id ) . '">' . esc_html( $f['label'] ) . '</label>';
+			echo $row ? '</th><td>' : '';  // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- literal markup.
+			if ( 'input' === $f['type'] ) {
+				echo '<input type="text" maxlength="120" name="' . esc_attr( $f['name'] ) . '" id="' . esc_attr( $id ) . '" value="' . esc_attr( $f['value'] ) . '" class="large-text">';
+			} else {
+				echo '<textarea rows="3" maxlength="600" name="' . esc_attr( $f['name'] ) . '" id="' . esc_attr( $id ) . '" class="large-text">' . esc_textarea( $f['value'] ) . '</textarea>';
+			}
+			echo '<p class="description">' . esc_html( $f['help'] ) . '</p>';
+			echo $row ? '</td></tr>' : '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- literal markup.
+		}
 	}
 
 	/**
@@ -167,8 +225,29 @@ final class CategoryCatalogFields {
 		if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) || ! current_user_can( 'manage_product_terms' ) || ! current_user_can( 'edit_term', $term_id ) ) { // phpcs:ignore WordPress.WP.Capabilities.Unknown
 			return;
 		}
-		if ( TermPair::is_translation( $term_id ) ) {
-			return; // Only the source-language term stores the values.
+		// Per-language text fields (every term, translations included).
+		$h1    = isset( $_POST['vx_cat_h1'] ) ? mb_substr( sanitize_text_field( wp_unslash( (string) $_POST['vx_cat_h1'] ) ), 0, 120 ) : null;
+		$intro = isset( $_POST['vx_cat_intro'] ) ? mb_substr(
+			wp_kses(
+				wp_unslash( (string) $_POST['vx_cat_intro'] ),
+				[
+					'a'      => [ 'href' => true ],
+					'strong' => [],
+					'em'     => [],
+					'br'     => [],
+				]
+			),
+			0,
+			600
+		) : null;
+		if ( null !== $h1 ) {
+			'' === $h1 ? delete_term_meta( $term_id, self::META_H1 ) : update_term_meta( $term_id, self::META_H1, $h1 );
+		}
+		if ( null !== $intro ) {
+			'' === trim( $intro ) ? delete_term_meta( $term_id, self::META_INTRO ) : update_term_meta( $term_id, self::META_INTRO, $intro );
+		}
+		if ( TermPair::is_translation( $term_id ) || ( ! isset( $_POST['vx_filter_attrs'] ) && ! isset( $_POST['vx_accessory_terms'] ) ) ) {
+			return; // Only the source-language term stores accessories / attributes (the add screen has no such fields).
 		}
 
 		$raw_acc = isset( $_POST['vx_accessory_terms'] ) && is_array( $_POST['vx_accessory_terms'] )

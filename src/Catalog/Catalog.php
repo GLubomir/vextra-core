@@ -43,6 +43,8 @@ final class Catalog implements ModuleInterface {
 		'vextra/catalog/recompute_discount',
 	];
 
+	public const PURGE_HOOK = 'vextra/catalog/purge';
+
 	/**
 	 * A flush is queued for shutdown.
 	 *
@@ -70,6 +72,8 @@ final class Catalog implements ModuleInterface {
 		require_once __DIR__ . '/functions.php';
 
 		Counts::register();
+		add_action( 'action_scheduler_init', [ self::class, 'schedule_purge' ] );
+		add_action( self::PURGE_HOOK, [ self::class, 'purge' ] );
 		( new Query() )->register();
 		( new Context() )->register();
 		( new DiscountMeta() )->register();
@@ -84,6 +88,25 @@ final class Catalog implements ModuleInterface {
 		add_action( 'pll_save_term', [ self::class, 'invalidate' ] );
 		foreach ( [ 'woocommerce_attribute_added', 'woocommerce_attribute_updated', 'woocommerce_attribute_deleted' ] as $hook ) {
 			add_action( $hook, [ self::class, 'invalidate' ] );
+		}
+	}
+
+	/**
+	 * Daily Action Scheduler job: delete the expired transients (canonical bundles live a week, the rest 10 minutes).
+	 */
+	public static function schedule_purge(): void {
+		$woo = Plugin::instance()->integration( 'woocommerce' );
+		if ( $woo instanceof \Vextra\Core\Integrations\WooCommerce\WooCommerce ) {
+			$woo->schedule_daily( self::PURGE_HOOK, 'vextra' );
+		}
+	}
+
+	/**
+	 * Purge expired transients (core function; no-op with an external object cache where TTLs expire on their own).
+	 */
+	public static function purge(): void {
+		if ( ! wp_using_ext_object_cache() ) {
+			delete_expired_transients( true );
 		}
 	}
 
@@ -118,6 +141,7 @@ final class Catalog implements ModuleInterface {
 	public static function flush_now(): void {
 		self::$queued = false;
 		Cache::flush( Counts::GROUP );
+		Cache::flush( Counts::BOUNDED_GROUP );
 		TermData::flush();
 	}
 }

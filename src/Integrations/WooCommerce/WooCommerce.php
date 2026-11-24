@@ -116,6 +116,19 @@ final class WooCommerce extends AbstractIntegration {
 	}
 
 	/**
+	 * Register a daily recurring Action Scheduler job once (no-op when it exists or Action Scheduler is missing).
+	 *
+	 * @param string $hook  Action hook.
+	 * @param string $group Action Scheduler group.
+	 */
+	public function schedule_daily( string $hook, string $group ): void {
+		if ( ! $this->has_action_scheduler() || ! function_exists( 'as_schedule_recurring_action' ) || as_has_scheduled_action( $hook, [], $group ) ) {
+			return;
+		}
+		as_schedule_recurring_action( time() + HOUR_IN_SECONDS, DAY_IN_SECONDS, $hook, [], $group );
+	}
+
+	/**
 	 * Guarded SQL adapter over Woo's product lookup table (the only direct SQL of the catalog module). Never null; every method
 	 * answers an empty value when the table is missing.
 	 */

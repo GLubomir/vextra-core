@@ -30,6 +30,15 @@ final class Counts {
 	private const TTL = HOUR_IN_SECONDS;
 
 	/**
+	 * Group, lifetime (seconds) and row cap of the non-canonical states.
+	 */
+	public const BOUNDED_GROUP = 'catalog_s';
+
+	private const BOUNDED_TTL = 600;
+
+	private const BOUNDED_ROWS = 200;
+
+	/**
 	 * Per-request memo of bundles.
 	 *
 	 * @var array<string,array<string,mixed>>
@@ -81,16 +90,34 @@ final class Counts {
 		if ( isset( self::$memo[ $key ] ) ) {
 			return self::$memo[ $key ];
 		}
-		$data = Cache::remember_swr(
-			self::GROUP,
-			$key,
-			self::TTL,
-			static fn(): array => self::build( $scope, $state ),
-			[
-				'scope' => $scope,
-				'state' => $state,
-			]
-		);
+		if ( self::is_canonical( $scope, $state ) ) {
+			$data = Cache::remember_swr(
+				self::GROUP,
+				$key,
+				self::TTL,
+				static fn(): array => self::build( $scope, $state ),
+				[
+					'scope' => $scope,
+					'state' => $state,
+				]
+			);
+		} else {
+			// Any other state (price range, several values or groups, search text) is not persisted for long and is capped: bots
+			// must not be able to grow the options table. Short TTL + at most BOUNDED_ROWS rows, oldest evicted.
+			$built = false;
+			$data  = Cache::remember(
+				self::BOUNDED_GROUP,
+				$key,
+				self::BOUNDED_TTL,
+				static function () use ( $scope, $state, &$built ): array {
+					$built = true;
+					return self::build( $scope, $state );
+				}
+			);
+			if ( $built ) {
+				Cache::track( self::BOUNDED_GROUP, $key, self::BOUNDED_ROWS );
+			}
+		}
 		if ( ! is_array( $data ) || ! isset( $data['groups'] ) ) {
 			$data = self::build( $scope, $state );
 		}
@@ -105,6 +132,7 @@ final class Counts {
 	 * @param array<string,mixed> $state Normalised state.
 	 */
 	public static function key( array $scope, array $state ): string {
+		$state['orderby'] = ''; // Counts do not depend on the sort: one entry serves every sort.
 		return 'b4:' . md5( (string) wp_json_encode( $scope ) ) . ':' . Params::hash( $state ) . ':' . ( DiscountMeta::ready() ? 'd' : 'n' );
 	}
 
@@ -116,7 +144,30 @@ final class Counts {
 	 * @return string[]
 	 */
 	public static function option_names( array $scope, array $state ): array {
+		if ( ! self::is_canonical( $scope, $state ) ) {
+			return Cache::option_names( self::BOUNDED_GROUP, self::key( $scope, $state ) );
+		}
 		return Cache::swr_option_names( self::GROUP, self::key( $scope, $state ) );
+	}
+
+	/**
+	 * Canonical states are the only ones cached for long (SWR, a week of storage): the unfiltered base and states with exactly ONE
+	 * selected value (one brand, one attribute term, one stock status, ...) of a category / brand / sale scope. Their number is bounded
+	 * by the catalog itself (terms x options). Price ranges, several values / groups and every search text (raw user input) are not.
+	 *
+	 * @param array<string,mixed> $scope Scope descriptor.
+	 * @param array<string,mixed> $state Normalised state.
+	 */
+	public static function is_canonical( array $scope, array $state ): bool {
+		if ( 'search' === ( $scope['kind'] ?? '' ) || null !== ( $state['min_price'] ?? null ) || null !== ( $state['max_price'] ?? null ) ) {
+			return false;
+		}
+		$values = count( (array) $state['stock'] ) + count( (array) $state['brand'] ) + ( array() === (array) $state['rating'] ? 0 : 1 )
+			+ ( empty( $state['on_sale'] ) ? 0 : 1 ) + ( (int) $state['discount'] > 0 ? 1 : 0 ) + ( '' === (string) $state['cat'] ? 0 : 1 );
+		foreach ( (array) $state['attrs'] as $terms ) {
+			$values += count( (array) $terms );
+		}
+		return $values <= 1;
 	}
 
 	/**
