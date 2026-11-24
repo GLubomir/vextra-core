@@ -496,7 +496,7 @@ try {
 	remove_action( 'shutdown', [ Store::class, 'flush_now' ], 5 );
 	Store::flush_now();
 	Store::reset_memo();
-	$ok( in_array( $tmp, $ids( Engine::recommend( 'product', [ 'product_id' => $keep, 'list' => 'related', 'limit' => 8 ] ) ), true ), 'stale bundle still lists the trashed candidate until the job runs (the card renderer skips it)' );
+	$ok( ! in_array( $tmp, $ids( Engine::recommend( 'product', [ 'product_id' => $keep, 'list' => 'related', 'limit' => 8 ] ) ), true ), 'the stale bundle already drops the trashed candidate before the job runs (render guard)' );
 	do_action( Cache::REBUILD_HOOK, Store::GROUP, $ckey );
 	do_action( Cache::REBUILD_HOOK, Store::GROUP, $tkey );
 	Store::reset_memo();
@@ -683,6 +683,57 @@ try {
 	$q = new WP_Query( \Vextra\Core\Support\Listable::apply( [ 'post_type' => 'product', 'fields' => 'ids', 'post__in' => [ $P_open, $P_secret ], 'lang' => '' ] ) );
 	$ok( [ $P_open ] === array_map( 'intval', $q->posts ), 'Listable::apply on WP_Query args' );
 	$ok( \Vextra\Core\Guard\ClientIp::mask( '2001:db8:1:2:aaaa:bbbb:cccc:dddd' ) === \Vextra\Core\Guard\ClientIp::mask( '2001:db8:1:2::1' ) && '2001:db8:1:2::/64' === \Vextra\Core\Guard\ClientIp::mask( '2001:db8:1:2:aaaa:bbbb:cccc:dddd' ) && '203.0.113.9' === \Vextra\Core\Guard\ClientIp::mask( '::ffff:203.0.113.9' ), 'SEC-067: Guard keys IPv6 by /64 and unmaps IPv4 (the recommend route uses the Guard `rest` bucket, no own key)' );
+
+	// ------------------------------------------------------------------------------------------------------------ SEC-068
+	WP_CLI::line( 'SEC-068 protected AFTER the bundle was built: absent on the next request, no Action Scheduler run' );
+	add_filter( 'vextra/cache/allow_cli', '__return_true' );
+	$late_anchor = $mk( 'late-anchor', 100, [ $prot_cat ] );
+	$late_open   = $mk( 'late-open', 100, [ $prot_cat ] );
+	$late_hit    = $mk( 'late-hit', 100, [ $prot_cat ] );
+	Store::flush_now();
+	remove_action( 'shutdown', [ Store::class, 'flush_now' ], 5 );
+	Store::reset_memo();
+	$before_ids = $engine_ids( 'product', [ 'product_id' => $late_anchor, 'list' => 'related', 'limit' => 8 ] );
+	$ok( in_array( $late_hit, $before_ids, true ), 'fixture: the bundle was built and lists the product' );
+	$jobs_before = function_exists( 'as_get_scheduled_actions' ) ? count( as_get_scheduled_actions( [ 'hook' => Cache::REBUILD_HOOK, 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => 200 ], 'ids' ) ) : 0;
+	wp_update_post( [ 'ID' => $late_hit, 'post_password' => 'secret' ] ); // Plain core update: no Woo hook fires, only post_updated.
+	$ok( false !== has_action( 'shutdown', [ Store::class, 'flush_now' ] ), '(a) post_updated marks the recommend bundles stale (flush queued)' );
+	remove_action( 'shutdown', [ Store::class, 'flush_now' ], 5 );
+	Store::flush_now();
+	remove_action( 'shutdown', [ Store::class, 'flush_now' ], 5 );
+	\Vextra\Core\Support\Listable::save_hidden(); // What the shutdown callback does.
+	Store::reset_memo();
+	$after_ids = $engine_ids( 'product', [ 'product_id' => $late_anchor, 'list' => 'related', 'limit' => 8 ] );
+	$ok( ! in_array( $late_hit, $after_ids, true ) && in_array( $late_open, $after_ids, true ), '(b) the stale bundle is served WITHOUT the protected product (render guard), the others stay', wp_json_encode( $after_ids ) );
+	$ok( array_key_exists( \Vextra\Core\Support\Listable::HIDDEN_OPTION, wp_load_alloptions() ), 'the hidden list is an autoloaded option (zero queries to read)' );
+	$q0 = $wpdb->num_queries;
+	\Vextra\Core\Support\Listable::renderable( [ $late_hit, $late_open ] );
+	$ok( $wpdb->num_queries === $q0 && [ $late_open ] === \Vextra\Core\Support\Listable::renderable( [ $late_hit, $late_open ] ), 'render guard: no query, drops the protected id' );
+	ob_start();
+	vx_component( 'product-card', [ 'product' => $late_hit, 'cache' => true ] );
+	$card_protected = trim( (string) ob_get_clean() );
+	ob_start();
+	vx_component( 'product-card', [ 'product' => $late_open, 'cache' => true ] );
+	$card_open = trim( (string) ob_get_clean() );
+	$ok( '' === $card_protected && '' !== $card_open, 'the product-card component prints nothing for the protected product' );
+	$ok( [ $late_open ] === array_map( static fn( array $c ): int => $c['id'], \Vextra\Theme\Woo\ProductCardData::renderable_cards( [ [ 'id' => $late_hit ], [ 'id' => $late_open ] ] ) ), 'home block card data guard' );
+	$jobs_after = count( as_get_scheduled_actions( [ 'hook' => Cache::REBUILD_HOOK, 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => 200 ], 'ids' ) );
+	$ok( $jobs_after === $jobs_before, 'no Action Scheduler job ran or was needed for the guard', $jobs_before . ' -> ' . $jobs_after );
+	// Status change counts too; and the product is shown again when the password goes.
+	wp_update_post( [ 'ID' => $late_hit, 'post_password' => '' ] );
+	\Vextra\Core\Support\Listable::save_hidden();
+	$ok( [ $late_hit ] === \Vextra\Core\Support\Listable::renderable( [ $late_hit ] ), 'removing the password shows it again' );
+	wp_update_post( [ 'ID' => $late_hit, 'post_status' => 'draft' ] );
+	\Vextra\Core\Support\Listable::save_hidden();
+	$ok( array() === \Vextra\Core\Support\Listable::renderable( [ $late_hit ] ), 'unpublishing hides it from cached lists as well' );
+	wp_delete_post( $late_hit, true );
+	\Vextra\Core\Support\Listable::save_hidden();
+	$ok( ! isset( \Vextra\Core\Support\Listable::hidden()[ $late_hit ] ), 'a deleted product leaves the hidden list' );
+	foreach ( as_get_scheduled_actions( [ 'hook' => Cache::REBUILD_HOOK, 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => 200 ], 'ids' ) as $aid ) {
+		as_unschedule_action( Cache::REBUILD_HOOK, ActionScheduler::store()->fetch_action( $aid )->get_args(), 'vextra' );
+	}
+	remove_filter( 'vextra/cache/allow_cli', '__return_true' );
+	remove_action( 'shutdown', [ Store::class, 'flush_now' ], 5 );
 
 	// ------------------------------------------------------------------------------------------------------------ AC15 conflict guard + kill switch
 	WP_CLI::line( 'AC15 conflict guard and kill switch' );

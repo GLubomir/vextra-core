@@ -46,6 +46,7 @@ final class Store {
 		'woocommerce_variation_set_stock_status',
 		'woocommerce_scheduled_sales',
 		'vextra/catalog/accessory_rules_changed',
+		'vextra/catalog/product_exposure_changed',
 		'pll_save_term',
 	];
 

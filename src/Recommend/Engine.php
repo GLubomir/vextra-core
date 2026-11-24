@@ -19,6 +19,7 @@ use Vextra\Core\Plugin;
 use Vextra\Core\Recommend\Source\Accessories;
 use Vextra\Core\Recommend\Source\Related;
 use Vextra\Core\Recommend\Source\WooLinks;
+use Vextra\Core\Support\Listable;
 
 final class Engine {
 
@@ -81,9 +82,10 @@ final class Engine {
 			$exclude[] = $id;
 		}
 
-		$out = [];
+		$out    = [];
+		$hidden = Listable::hidden(); // Products that turned protected / unpublished since the bundle was built: no query.
 		foreach ( $list as $item ) {
-			if ( in_array( $item['id'], $exclude, true ) ) {
+			if ( isset( $hidden[ $item['id'] ] ) || in_array( $item['id'], $exclude, true ) ) {
 				continue;
 			}
 			$out[] = [

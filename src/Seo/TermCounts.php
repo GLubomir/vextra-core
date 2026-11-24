@@ -83,6 +83,7 @@ final class TermCounts {
 		add_action( 'edited_' . self::TAXONOMY, [ $this, 'invalidate' ] );
 		add_action( 'delete_' . self::TAXONOMY, [ $this, 'invalidate' ] );
 		add_action( 'pll_save_term', [ $this, 'invalidate' ] );
+		add_action( 'vextra/catalog/product_exposure_changed', [ $this, 'invalidate' ] );
 	}
 
 	/**

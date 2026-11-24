@@ -28,7 +28,7 @@ final class SaleProducts {
 	private const TTL = 1800;
 
 	public function register(): void {
-		foreach ( [ 'woocommerce_update_product', 'woocommerce_new_product', 'woocommerce_trash_product', 'woocommerce_delete_product', 'woocommerce_save_product_variation', 'woocommerce_scheduled_sales' ] as $hook ) {
+		foreach ( [ 'woocommerce_update_product', 'woocommerce_new_product', 'woocommerce_trash_product', 'woocommerce_delete_product', 'woocommerce_save_product_variation', 'woocommerce_scheduled_sales', 'vextra/catalog/product_exposure_changed' ] as $hook ) {
 			add_action( $hook, [ self::class, 'flush' ] );
 		}
 	}
