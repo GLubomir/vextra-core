@@ -49,6 +49,8 @@ final class Module implements ModuleInterface {
 		$regenerate->register();
 		( new Cleanup() )->register();
 
+		add_filter( 'wp_calculate_image_srcset', [ $this, 'srcset' ], 20, 5 );
+
 		$rank = Plugin::instance()->integration( 'rankmath' );
 		if ( $rank instanceof RankMath ) {
 			$rank->filter_og_image_sizes( [ $this, 'og_sizes' ] );
@@ -67,5 +69,40 @@ final class Module implements ModuleInterface {
 	 */
 	public function og_sizes( $sizes ) {
 		return is_array( $sizes ) ? [ 'full' ] : $sizes;
+	}
+
+	/**
+	 * `srcset` candidates: drop the non-WebP candidate (the original JPEG / PNG) while the largest WebP / AVIF candidate is at least 0.75x the
+	 * original width, so the browser never picks the heavy original on a mid-size screen. Smaller WebP ranges keep the original (large screens
+	 * still get enough pixels). `src`, OG, schema and the sitemap are not touched.
+	 *
+	 * @param mixed $sources    Candidates keyed by width: `url`, `descriptor`, `value`.
+	 * @param mixed $size_array Requested size (unused).
+	 * @param mixed $image_src  Chosen `src` (unused).
+	 * @param mixed $image_meta Attachment metadata.
+	 * @return mixed
+	 */
+	public function srcset( $sources, $size_array = [], $image_src = '', $image_meta = [] ) {
+		unset( $size_array, $image_src );
+		if ( ! is_array( $sources ) || ! is_array( $image_meta ) || empty( $image_meta['width'] ) ) {
+			return $sources;
+		}
+		$modern = [];
+		$legacy = [];
+		foreach ( $sources as $w => $source ) {
+			$url = is_array( $source ) && isset( $source['url'] ) ? (string) wp_parse_url( (string) $source['url'], PHP_URL_PATH ) : '';
+			if ( 1 === preg_match( '/\.(?:webp|avif)$/i', $url ) ) {
+				$modern[] = (int) $w;
+			} else {
+				$legacy[] = $w;
+			}
+		}
+		if ( array() === $modern || array() === $legacy || max( $modern ) < 0.75 * (int) $image_meta['width'] ) {
+			return $sources;
+		}
+		foreach ( $legacy as $w ) {
+			unset( $sources[ $w ] );
+		}
+		return $sources;
 	}
 }
