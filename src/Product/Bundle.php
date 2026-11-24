@@ -307,11 +307,28 @@ final class Bundle {
 			'saving_html'    => $sale ? self::money( (float) $regular - (float) $now ) : '',
 			'pct'            => $sale ? (int) round( ( (float) $regular - (float) $now ) / (float) $regular * 100 ) : 0,
 			'status'         => $status,
-			'qty'            => $variation->managing_stock() ? (int) $variation->get_stock_quantity() : null,
+			'qty'            => self::public_qty( $variation ),
 			'sku'            => (string) $variation->get_sku(),
 			'purchasable'    => $variation->is_purchasable() && in_array( $status, [ 'instock', 'onbackorder' ], true ),
 			'image'          => $image > 0 ? $image : null,
 		];
+	}
+
+	/**
+	 * Exact stock of a variation, ONLY when it is low (SEC-070): managed, positive and at most the low-stock threshold (the variation's own
+	 * or its parent's, else the store's). Otherwise null: the page shows availability (`status`) only; Woo validates the quantity on POST.
+	 *
+	 * @param \WC_Product_Variation $variation Variation.
+	 */
+	private static function public_qty( \WC_Product_Variation $variation ): ?int {
+		if ( ! $variation->managing_stock() ) {
+			return null;
+		}
+		$qty = (int) $variation->get_stock_quantity();
+		$own = $variation->get_low_stock_amount();
+		$woo = Plugin::instance()->integration( 'woocommerce' );
+		$max = '' !== $own && null !== $own ? (int) $own : ( $woo instanceof \Vextra\Core\Integrations\WooCommerce\WooCommerce ? $woo->low_stock_threshold() : 2 );
+		return $qty > 0 && $qty <= $max ? $qty : null;
 	}
 
 	/**

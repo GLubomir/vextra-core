@@ -341,4 +341,11 @@ final class WooCommerce extends AbstractIntegration {
 		// phpcs:enable WordPress.DB.DirectDatabaseQuery
 		return array_map( 'intval', (array) $ids );
 	}
+
+	/**
+	 * Store low-stock threshold (option `woocommerce_notify_low_stock_amount`, default 2). Fallback: 2.
+	 */
+	public function low_stock_threshold(): int {
+		return $this->is_available() ? max( 0, (int) get_option( 'woocommerce_notify_low_stock_amount', 2 ) ) : 2;
+	}
 }
