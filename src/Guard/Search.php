@@ -204,6 +204,7 @@ final class Search {
 					wp_json_encode( $query->get( 'post_type' ) ),
 					(string) max( 1, (int) $query->get( 'paged' ) ),
 					(string) $query->get( 'posts_per_page' ),
+					(string) $query->get( 'vx_catalog_key' ), // Filter / sort state of the catalog module (TASK-043b).
 				]
 			)
 		);

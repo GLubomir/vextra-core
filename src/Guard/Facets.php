@@ -8,7 +8,8 @@
  *
  * `parse_request` priority 1 (before the main query). Over the limit: the 429 page in the language of the URL (`Responder`) with
  * `Retry-After` and `X-Robots-Tag: noindex`. Clean category / product URLs never touch this bucket. Skipped for REST, admin,
- * AJAX, cron, WP-CLI, `wc-ajax`, owner-bot / `Exempt` clients. Fails open.
+ * AJAX, cron, WP-CLI, `wc-ajax`, owner-bot / `Exempt` clients and requests with a non-empty `s` (the Search bucket counts them, TASK-043b).
+ * Fails open.
  *
  * @package Vextra\Core
  */
@@ -46,6 +47,10 @@ final class Facets {
 			return;
 		}
 		if ( ! Params::has_facet( $_GET ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- keys only, nothing is read or output.
+			return;
+		}
+		// A product search is already counted by the Search bucket (`Guard\Search`); counting it twice costs five queries per search.
+		if ( isset( $wp->query_vars['s'] ) && is_string( $wp->query_vars['s'] ) && '' !== $wp->query_vars['s'] ) {
 			return;
 		}
 		if ( Exempt::is_exempt() ) {

@@ -59,6 +59,51 @@ final class Cli {
 			[ $this, 'sale_page' ],
 			[ 'shortdesc' => 'Create / repair the sale pages /aktsii/ (UA) and /ru/aktsii/ (RU), link them as translations, rebuild option vx_sale_pages. Idempotent: existing content is never overwritten.' ]
 		);
+		\WP_CLI::add_command(
+			'vextra catalog discount-backfill',
+			[ $this, 'discount_backfill' ],
+			[ 'shortdesc' => 'Compute _vx_discount_pct for every published product (variable = max over variations). Idempotent, batched. Flags: --dry-run, --batch=<n>.' ]
+		);
+	}
+
+	/**
+	 * `wp vextra catalog discount-backfill [--dry-run] [--batch=<n>]`: compute `_vx_discount_pct` for every published product of every
+	 * language (variable = max over variations). Batches by id (resumable, memory flat), idempotent: a second run changes nothing.
+	 *
+	 * @param array<int,string>   $args  Positional args (unused).
+	 * @param array<string,mixed> $assoc Flags: dry-run, batch.
+	 */
+	public function discount_backfill( $args = [], $assoc = [] ): void {
+		unset( $args );
+		$dry   = ! empty( $assoc['dry-run'] );
+		$batch = max( 20, min( 500, (int) ( $assoc['batch'] ?? 100 ) ) );
+		$last  = 0;
+		$seen  = 0;
+		$set   = 0;
+		$clear = 0;
+		global $wpdb;
+		$count = $batch;
+		do {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- id paging of published products, prepared.
+			$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s AND ID > %d ORDER BY ID ASC LIMIT %d", 'product', 'publish', $last, $batch ) );
+			$count = count( (array) $ids );
+			foreach ( (array) $ids as $id ) {
+				$last = (int) $id;
+				++$seen;
+				$value = DiscountMeta::recompute( $last, $dry );
+				if ( null !== $value ) {
+					0 === $value ? ++$clear : ++$set;
+				}
+			}
+			if ( function_exists( 'wp_cache_flush_runtime' ) ) {
+				wp_cache_flush_runtime();
+			}
+		} while ( $count === $batch );
+
+		if ( ! $dry && $set > 0 ) {
+			update_option( DiscountMeta::READY_OPTION, 1, true );
+		}
+		\WP_CLI::success( sprintf( '%s: %d products checked, %d set / changed, %d cleared', $dry ? 'dry-run (nothing written)' : 'done', $seen, $set, $clear ) );
 	}
 
 	/**

@@ -91,6 +91,39 @@ final class WooCommerce extends AbstractIntegration {
 	}
 
 	/**
+	 * Whether Action Scheduler (bundled with Woo) can enqueue jobs. Fallback: false.
+	 */
+	public function has_action_scheduler(): bool {
+		return $this->is_available() && function_exists( 'as_enqueue_async_action' ) && function_exists( 'as_has_scheduled_action' );
+	}
+
+	/**
+	 * Enqueue ONE async Action Scheduler job: no new job while an identical one is pending. True also when it is already pending.
+	 * Fallback: false.
+	 *
+	 * @param string            $hook  Action hook.
+	 * @param array<int,string> $args  Job args (scalars only).
+	 * @param string            $group Action Scheduler group.
+	 */
+	public function enqueue_async_action( string $hook, array $args, string $group ): bool {
+		if ( ! $this->has_action_scheduler() ) {
+			return false;
+		}
+		if ( as_has_scheduled_action( $hook, $args, $group ) ) {
+			return true;
+		}
+		return 0 !== (int) as_enqueue_async_action( $hook, $args, $group );
+	}
+
+	/**
+	 * Guarded SQL adapter over Woo's product lookup table (the only direct SQL of the catalog module). Never null; every method
+	 * answers an empty value when the table is missing.
+	 */
+	public function lookup(): Lookup {
+		return new Lookup();
+	}
+
+	/**
 	 * The ids of a list that are on sale RIGHT NOW (`WC_Product::is_on_sale()` honours the sale schedule, so a sale whose end
 	 * date has passed but whose lookup row is stale is dropped). Products are loaded through CRUD (caches primed in one query per 200). Fallback: [].
 	 *

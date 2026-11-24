@@ -112,6 +112,12 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'function', 'wc_price', true, 'theme ProductCardData', 'price label empty' ),
 			$e( 'woocommerce', 'function', 'wc_get_logger', false, 'core Support/Log', 'error_log fallback' ),
 			$e( 'woocommerce', 'function', 'wc_recount_all_terms', false, 'core Seo Cli', 'command reports it missing' ),
+			$e( 'woocommerce', 'function', 'wc_get_product_visibility_term_ids', false, 'core Catalog Counts / Query', 'hidden products not excluded from counts / sale listing' ),
+			$e( 'woocommerce', 'function', 'wc_get_attribute_taxonomies', false, 'core Catalog FilterAttributes', 'no attribute facets' ),
+			$e( 'woocommerce', 'function', 'wc_get_related_products', false, 'theme Catalog Related (WooCommerce adapter)', 'no related section' ),
+			$e( 'woocommerce', 'option', 'woocommerce_db_version', false, 'core Catalog Lookup (lookup table guard)', 'SHOW TABLES check' ),
+			$e( 'woocommerce', 'hook', 'loop_shop_per_page', false, 'core Catalog Query', 'Woo default per page' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_attribute_added', false, 'core Catalog', 'catalog data stale for the 1 h TTL' ),
 			$e( 'woocommerce', 'function', 'wc_update_product_stock', true, 'core Multilang StockSync', 'stock sync off, twins drift' ),
 			$e( 'woocommerce', 'function', 'woocommerce_content', true, 'theme woocommerce.php', 'template unused without Woo' ),
 			$e( 'woocommerce', 'function', 'is_shop', true, 'core Seo Templates, theme header', 'treated as not shop' ),
@@ -191,6 +197,7 @@ final class Compat implements ModuleInterface {
 
 			// Rank Math.
 			$e( 'rankmath', 'const', 'RANK_MATH_VERSION', true, 'core RankMath adapter', 'adapter unavailable' ),
+			$e( 'rankmath', 'function', 'rank_math_get_breadcrumbs', false, 'theme RankMath adapter (catalog breadcrumb)', 'no visible trail' ),
 			$e( 'rankmath', 'class', 'RankMath\\Helper', false, 'core RankMath adapter', 'setting assumed default' ),
 			$e( 'rankmath', 'class', 'RankMath\\Term', false, 'core RankMath adapter', 'treated as single term' ),
 			$e( 'rankmath', 'class', 'RankMath\\Sitemap\\Cache', true, 'core RankMath adapter', 'stale sitemap until TTL' ),

@@ -76,6 +76,18 @@ final class Breadcrumbs {
 		$crumbs[0][0] = $this->templates->strings( $lang )['home_label'];
 		$crumbs[0][1] = $home;
 
+		if ( is_search() ) {
+			// "Головна > Пошук" (TASK-043b): the query text is the H1, never part of the trail.
+			return [
+				$crumbs[0],
+				[
+					'ru' === $lang ? 'Поиск' : 'Пошук',
+					'',
+					'hide_in_schema' => false,
+				],
+			];
+		}
+
 		if ( ! is_tax( TermCounts::TAXONOMY ) && ! is_singular( 'product' ) ) {
 			return $crumbs;
 		}
