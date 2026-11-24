@@ -116,6 +116,21 @@ final class WooCommerce extends AbstractIntegration {
 	}
 
 	/**
+	 * Drop Woo's `the_posts` priming filter of the variable-product transients: the catalog template reads them for exactly its cards
+	 * (`ProductCardData::prime`), so Woo's pass would repeat the query (its thumbnail priming stays: it runs first and the card images need it). Public WP hook API on
+	 * Woo's query object; absent object / callbacks = nothing removed (the repeat costs queries, nothing breaks).
+	 */
+	public function drop_loop_priming(): void {
+		if ( ! $this->is_available() || ! function_exists( 'WC' ) ) {
+			return;
+		}
+		$query = WC()->query ?? null;
+		if ( is_object( $query ) ) {
+			remove_filter( 'the_posts', [ $query, 'prime_variable_products_transients' ], 10 );
+		}
+	}
+
+	/**
 	 * Register a daily recurring Action Scheduler job once (no-op when it exists or Action Scheduler is missing).
 	 *
 	 * @param string $hook  Action hook.

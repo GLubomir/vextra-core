@@ -260,7 +260,7 @@ final class Params {
 	}
 
 	/**
-	 * Canonical query string of a state (no leading `?`): defaults omitted, keys sorted, comma lists sorted. The same state always
+	 * Canonical query string of a state (no leading `?`): defaults omitted, keys sorted, comma lists sorted, the list separator is the encoded comma `%2C`. The same state always
 	 * gives byte-identical output (the JS mirror of TASK-043c and the QA check compare it). `page` is NOT part of it (path segment).
 	 *
 	 * @param array<string,mixed> $state State from normalise().
@@ -270,7 +270,8 @@ final class Params {
 		$list  = static function ( array $values ): string {
 			$values = array_map( 'strval', $values );
 			sort( $values );
-			return implode( ',', array_map( static fn( string $v ): string => rawurlencode( $v ), $values ) );
+			// `%2C`, exactly as WordPress canonicalises the URL (redirect_canonical re-encodes a literal comma): no extra 301 hop.
+			return implode( '%2C', array_map( static fn( string $v ): string => rawurlencode( $v ), $values ) );
 		};
 
 		if ( '' !== (string) ( $state['orderby'] ?? '' ) ) {
@@ -296,7 +297,7 @@ final class Params {
 		if ( ! empty( $state['rating'] ) ) {
 			$ints = array_map( 'intval', (array) $state['rating'] );
 			sort( $ints );
-			$pairs['rating_filter'] = implode( ',', $ints );
+			$pairs['rating_filter'] = implode( '%2C', $ints );
 		}
 		if ( ! empty( $state['on_sale'] ) ) {
 			$pairs['filter_on_sale'] = '1';

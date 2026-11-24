@@ -116,6 +116,7 @@ final class Compat implements ModuleInterface {
 			$e( 'woocommerce', 'function', 'wc_get_attribute_taxonomies', false, 'core Catalog FilterAttributes', 'no attribute facets' ),
 			$e( 'woocommerce', 'function', 'wc_get_related_products', false, 'theme Catalog Related (WooCommerce adapter)', 'no related section' ),
 			$e( 'woocommerce', 'option', 'woocommerce_db_version', false, 'core Catalog Lookup (lookup table guard)', 'SHOW TABLES check' ),
+			$e( 'woocommerce', 'hook', 'woocommerce_enable_post_clause_filtering', false, 'core Catalog Query', 'Woo price clause also runs' ),
 			$e( 'woocommerce', 'hook', 'loop_shop_per_page', false, 'core Catalog Query', 'Woo default per page' ),
 			$e( 'woocommerce', 'hook', 'woocommerce_attribute_added', false, 'core Catalog', 'catalog data stale for the 1 h TTL' ),
 			$e( 'woocommerce', 'function', 'wc_update_product_stock', true, 'core Multilang StockSync', 'stock sync off, twins drift' ),

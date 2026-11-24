@@ -51,6 +51,8 @@ final class Query {
 		add_action( 'pre_get_posts', [ $this, 'main_query' ], 20 );
 		add_filter( 'posts_clauses', [ $this, 'clauses' ], 20, 2 );
 		add_filter( 'loop_shop_per_page', static fn(): int => Params::PER_PAGE, 99 );
+		// Woo's own price clause (reads the raw parameters, an empty `max_price=` would exclude everything): this module applies the price.
+		add_filter( 'woocommerce_enable_post_clause_filtering', static fn( $enabled, $query = null ) => $query instanceof \WP_Query && '' !== (string) $query->get( 'vx_catalog' ) ? false : $enabled, 10, 2 );
 	}
 
 	/**
@@ -103,14 +105,27 @@ final class Query {
 
 	/**
 	 * Replace the Woo-native values of `$_GET` by their normalised form (keys stay).
+	 *
+	 * @param mixed $wp WP object of `parse_request` (its raw query vars are cleaned).
 	 */
-	public function sanitise_get(): void {
+	public function sanitise_get( $wp = null ): void {
 		if ( is_admin() || ( defined( 'WP_CLI' ) && WP_CLI ) || array() === $_GET ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			return;
 		}
 		$get = self::get();
 		if ( ! Params::has_facet( $get ) ) {
 			return;
+		}
+		// Woo's product-filter layer (WC 11.3) reads the same parameters as query vars (`filter_stock_status`, `filter_<attr>`, price,
+		// rating) and would apply raw, unvalidated values (`filter_stock_status=bogus` = empty list). Everything it knows is applied
+		// by this module from the normalised state, so the raw query vars are removed (the `$_GET` keys stay for robots / hreflang).
+		if ( $wp instanceof \WP && is_array( $wp->query_vars ) ) {
+			foreach ( array_keys( $wp->query_vars ) as $var ) {
+				$var = (string) $var;
+				if ( in_array( $var, [ 'min_price', 'max_price', 'rating_filter' ], true ) || str_starts_with( $var, 'filter_' ) || str_starts_with( $var, 'query_type_' ) ) {
+					unset( $wp->query_vars[ $var ] );
+				}
+			}
 		}
 		self::$raw = $get;
 		$state     = Params::normalise( $get, 'sale', [ self::class, 'known' ] );
@@ -178,6 +193,11 @@ final class Query {
 			$q->set( 'posts_per_page', 1 );
 			$q->set( 'no_found_rows', true );
 			return;
+		}
+
+		$woo = Plugin::instance()->integration( 'woocommerce' );
+		if ( $woo instanceof WooCommerce ) {
+			$woo->drop_loop_priming();
 		}
 
 		$state = self::state( $context );
