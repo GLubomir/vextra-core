@@ -24,6 +24,12 @@ final class RankMath extends AbstractIntegration {
 	public const GENERAL_OPTION   = 'rank-math-options-general';
 	public const WRITABLE_GENERAL = [ 'redirections_post_redirect', 'attachment_redirect_urls', 'attachment_redirect_default' ];
 
+	/**
+	 * Rank Math titles options option name and its writable keys (`apply-config`: password-protected pages / products are `noindex`).
+	 */
+	public const TITLES_OPTION   = 'rank-math-options-titles';
+	public const WRITABLE_TITLES = [ 'noindex_password_protected' ];
+
 	public function id(): string {
 		return 'rankmath';
 	}
@@ -579,11 +585,33 @@ final class RankMath extends AbstractIntegration {
 	 * @return string[]|null Keys that changed, null when the write is impossible.
 	 */
 	public function write_general_settings( array $values ): ?array {
+		return $this->write_settings( self::GENERAL_OPTION, self::WRITABLE_GENERAL, $values );
+	}
+
+	/**
+	 * Same for `rank-math-options-titles` (whitelist WRITABLE_TITLES).
+	 *
+	 * @param array<string,string> $values Key => value.
+	 * @return string[]|null Keys that changed, null when the write is impossible.
+	 */
+	public function write_titles_settings( array $values ): ?array {
+		return $this->write_settings( self::TITLES_OPTION, self::WRITABLE_TITLES, $values );
+	}
+
+	/**
+	 * Write whitelisted keys of one Rank Math option, every other key untouched.
+	 *
+	 * @param string               $option    Option name.
+	 * @param string[]             $whitelist Writable keys.
+	 * @param array<string,string> $values    Key => value.
+	 * @return string[]|null
+	 */
+	private function write_settings( string $option, array $whitelist, array $values ): ?array {
 		if ( ! $this->is_available() ) {
 			return null;
 		}
-		$values  = array_intersect_key( $values, array_flip( self::WRITABLE_GENERAL ) );
-		$current = get_option( self::GENERAL_OPTION, [] );
+		$values  = array_intersect_key( $values, array_flip( $whitelist ) );
+		$current = get_option( $option, [] );
 		$current = is_array( $current ) ? $current : [];
 		$changed = [];
 		foreach ( $values as $key => $value ) {
@@ -596,7 +624,7 @@ final class RankMath extends AbstractIntegration {
 		if ( [] === $changed ) {
 			return [];
 		}
-		if ( ! update_option( self::GENERAL_OPTION, $current ) ) {
+		if ( ! update_option( $option, $current ) ) {
 			return null;
 		}
 		return $changed;
@@ -609,7 +637,26 @@ final class RankMath extends AbstractIntegration {
 	 * @param string $key Option key.
 	 */
 	public function stored_general_setting( string $key ): string {
-		$current = get_option( self::GENERAL_OPTION, [] );
+		return $this->stored_setting( self::GENERAL_OPTION, $key );
+	}
+
+	/**
+	 * Stored value of one titles setting straight from the option.
+	 *
+	 * @param string $key Option key.
+	 */
+	public function stored_titles_setting( string $key ): string {
+		return $this->stored_setting( self::TITLES_OPTION, $key );
+	}
+
+	/**
+	 * Stored value of one key of a Rank Math option.
+	 *
+	 * @param string $option Option name.
+	 * @param string $key    Key.
+	 */
+	private function stored_setting( string $option, string $key ): string {
+		$current = get_option( $option, [] );
 		return is_array( $current ) && isset( $current[ $key ] ) && is_scalar( $current[ $key ] ) ? (string) $current[ $key ] : '';
 	}
 

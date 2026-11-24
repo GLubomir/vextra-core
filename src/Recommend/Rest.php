@@ -32,6 +32,7 @@ final class Rest {
 
 	public function register(): void {
 		add_action( 'rest_api_init', [ $this, 'register_route' ] );
+		add_filter( 'rest_post_dispatch', [ $this, 'no_store_errors' ], 20, 3 );
 	}
 
 	public function register_route(): void {
@@ -60,6 +61,21 @@ final class Rest {
 				],
 			]
 		);
+	}
+
+	/**
+	 * Errors of this route (400 / 404 / 429) are never cached; only the valid `post_add` answer is public.
+	 *
+	 * @param mixed $response Response.
+	 * @param mixed $server   Server.
+	 * @param mixed $request  Request.
+	 * @return mixed
+	 */
+	public function no_store_errors( $response, $server = null, $request = null ) {
+		if ( $response instanceof \WP_REST_Response && $request instanceof \WP_REST_Request && $response->get_status() >= 400 && self::NAMESPACE . self::ROUTE === ltrim( $request->get_route(), '/' ) ) {
+			$response->header( 'Cache-Control', 'no-store' );
+		}
+		return $response;
 	}
 
 	/**

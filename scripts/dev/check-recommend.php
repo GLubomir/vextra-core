@@ -59,6 +59,10 @@ $cleanup = static function (): array {
 		wp_delete_term( (int) $tid, 'product_cat' );
 	}
 	$out['terms'] = array_map( 'intval', $terms );
+	$tags = $wpdb->get_col( "SELECT t.term_id FROM {$wpdb->terms} t INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_id = t.term_id WHERE tt.taxonomy = 'product_tag' AND t.name LIKE 't038-%'" ); // phpcs:ignore
+	foreach ( $tags as $tid ) {
+		wp_delete_term( (int) $tid, 'product_tag' );
+	}
 	$users = get_users( [ 'search' => 't038-*', 'search_columns' => [ 'user_login' ], 'fields' => 'ID' ] );
 	foreach ( $users as $uid ) {
 		require_once ABSPATH . 'wp-admin/includes/user.php';
@@ -216,16 +220,58 @@ try {
 	$sorted = $t1;
 	sort( $sorted );
 	$ok( $t1 === $sorted, 'related tiers ascending for a laptop', wp_json_encode( $t1 ) );
-	$tags = [];
+	// Relevance window (SEO review): inside a tier the best 2 x limit by score (ties included) are ordered by the per-anchor hash.
+	$win_ok  = true;
+	$win_ids = [];
 	foreach ( $rel1 as $i ) {
-		if ( (int) $i['meta']['tier'] === 1 ) {
-			$tags[] = [ -$i['meta']['tags'], -$i['meta']['attr'], $i['meta']['key'], $i['id'] ];
+		if ( 1 === (int) $i['meta']['tier'] && ! empty( $i['meta']['window'] ) ) {
+			$win_ids[] = $i;
 		}
 	}
-	$sorted = $tags;
-	usort( $sorted, static fn( array $a, array $b ): int => [ $a[0], $a[1] ] <=> [ $b[0], $b[1] ] ?: strcmp( $a[2], $b[2] ) ?: $a[3] <=> $b[3] );
-	$ok( $tags === $sorted, 'related tie-break: shared tags desc, shared attributes desc, per-anchor hash, id' );
+	$keys = array_column( array_column( $win_ids, 'meta' ), 'key' );
+	$srt  = $keys;
+	sort( $srt, SORT_STRING );
+	$win_ok = array() !== $win_ids && $keys === $srt;
+	foreach ( $rel1 as $i ) {
+		foreach ( $win_ids as $w ) {
+			if ( 1 === (int) $i['meta']['tier'] && empty( $i['meta']['window'] ) && [ $i['meta']['tags'], $i['meta']['attr'] ] > [ $w['meta']['tags'], $w['meta']['attr'] ] ) {
+				$win_ok = false; // A better-scoring row outside the window.
+			}
+		}
+	}
+	$ok( $win_ok, 'related: the window holds the best scores and is ordered by the per-anchor hash' );
 	$ok( array() !== Engine::explain( 'product', [ 1066 ], 'uk' )['trace']['lists']['related']['ranked'][0]['meta'], 'explain prints the tie-break key' );
+
+	// Relevance GATES, the hash SPREADS: tagged products fill the window, untagged ones come after, and two anchors pick different slots.
+	$tag   = wp_insert_term( 't038-tag', 'product_tag' );
+	$tag   = (int) $tag['term_id'];
+	pll_set_term_language( $tag, 'uk' );
+	$state['tags'][] = $tag;
+	$cat_w  = wp_insert_term( 't038-cat-w', 'product_cat' );
+	$cat_w  = (int) $cat_w['term_id'];
+	pll_set_term_language( $cat_w, 'uk' );
+	$state['terms'][] = $cat_w;
+	$tagged = [];
+	for ( $i = 1; $i <= 10; $i++ ) {
+		$tagged[] = $mk( 'rel-tag-' . $i, 100, [ $cat_w ], [ 'tags' => [ $tag ] ] );
+	}
+	$plain = [];
+	for ( $i = 1; $i <= 5; $i++ ) {
+		$plain[] = $mk( 'rel-plain-' . $i, 100, [ $cat_w ] );
+	}
+	$w1 = $mk( 'rel-w1', 100, [ $cat_w ], [ 'tags' => [ $tag ] ] );
+	$w2 = $mk( 'rel-w2', 100, [ $cat_w ], [ 'tags' => [ $tag ] ] );
+	$l1 = $engine_ids( 'product', [ 'product_id' => $w1, 'list' => 'related', 'limit' => 8 ] );
+	$l2 = $engine_ids( 'product', [ 'product_id' => $w2, 'list' => 'related', 'limit' => 8 ] );
+	$ok( array() === array_intersect( array_slice( $l1, 0, 8 ), $plain ), 'relevance gates: no untagged product takes one of the first 8 slots while 10+ tagged ones exist', wp_json_encode( $l1 ) );
+	$ok( array_slice( $l1, 0, 4 ) !== array_slice( $l2, 0, 4 ) && array() === array_diff( array_slice( $l1, 0, 4 ), array_merge( $tagged, [ $w2 ] ) ), 'the hash spreads: two anchors get different slots, all of them relevant' );
+	$spread = [];
+	foreach ( array_merge( $tagged, [ $w1, $w2 ] ) as $anchor ) {
+		foreach ( array_slice( $engine_ids( 'product', [ 'product_id' => $anchor, 'list' => 'related', 'limit' => 4 ] ), 0, 4 ) as $x ) {
+			$spread[ $x ] = ( $spread[ $x ] ?? 0 ) + 1;
+		}
+	}
+	$ok( 12 === count( array_intersect( array_keys( $spread ), array_merge( $tagged, [ $w1, $w2 ] ) ) ), 'every relevant product gets at least one slot across the 12 pages', (string) count( $spread ) );
 
 	// ------------------------------------------------------------------------------------------------------------ AC3 filters
 	WP_CLI::line( 'AC3 filters' );
@@ -735,6 +781,21 @@ try {
 	remove_filter( 'vextra/cache/allow_cli', '__return_true' );
 	remove_action( 'shutdown', [ Store::class, 'flush_now' ], 5 );
 
+	// ------------------------------------------------------------------------------------------------------------ REST cache headers (over HTTP, as an anonymous visitor)
+	WP_CLI::line( 'REST Cache-Control' );
+	$call = static function ( string $query ): array {
+		$r = wp_remote_get( rest_url( 'vextra/v1/recommend' ) . '?' . $query, [ 'timeout' => 20, 'redirection' => 0 ] );
+		return is_wp_error( $r ) ? [ 0, '' ] : [ (int) wp_remote_retrieve_response_code( $r ), (string) wp_remote_retrieve_header( $r, 'cache-control' ) ];
+	};
+	[ $c1, $h1 ] = $call( 'context=post_add&product_id=1066' );
+	$ok( 200 === $c1 && 'public, max-age=300' === $h1, 'post_add 200: public, max-age=300', $c1 . ' ' . $h1 );
+	[ $c2, $h2 ] = $call( 'context=cart' );
+	$ok( 200 === $c2 && 'no-store' === $h2, 'cart 200: no-store', $c2 . ' ' . $h2 );
+	[ $c3, $h3 ] = $call( 'context=post_add&product_id=99999999' );
+	$ok( 400 === $c3 && str_contains( $h3, 'no-store' ), 'unknown product 400: no-store', $c3 . ' ' . $h3 );
+	[ $c4, $h4 ] = $call( 'context=bogus&product_id=1' );
+	$ok( 400 === $c4 && str_contains( $h4, 'no-store' ), 'invalid param 400: no-store', $c4 . ' ' . $h4 );
+
 	// ------------------------------------------------------------------------------------------------------------ AC15 conflict guard + kill switch
 	WP_CLI::line( 'AC15 conflict guard and kill switch' );
 	$conf  = new Conflicts();
@@ -879,6 +940,7 @@ try {
 		}
 		$starved = [];
 		$worst   = 0.0;
+		$elig_in = [];
 		foreach ( get_terms( [ 'taxonomy' => 'product_cat', 'hide_empty' => true, 'lang' => $lang ] ) as $term ) {
 			$members = array_values( array_filter( $list, static fn( int $pid ): bool => in_array( $term->term_id, array_merge( wp_get_post_terms( $pid, 'product_cat', [ 'fields' => 'ids' ] ), ...array_map( static fn( int $t ): array => get_ancestors( $t, 'product_cat' ), wp_get_post_terms( $pid, 'product_cat', [ 'fields' => 'ids' ] ) ) ), true ) ) );
 			if ( count( $members ) <= 4 ) {
@@ -888,6 +950,9 @@ try {
 				$p = wc_get_product( $pid );
 				return $p instanceof WC_Product && $p->is_in_stock() && $p->is_visible();
 			} ) );
+			foreach ( $eligible as $pid ) {
+				$elig_in[ $pid ] = $inbound[ $pid ];
+			}
 			$vals = array_map( static fn( int $pid ): int => $inbound[ $pid ], $eligible );
 			$mean = array_sum( $vals ) / max( 1, count( $vals ) );
 			$worst = max( $worst, $mean > 0 ? max( $vals ) / $mean : 0 );
@@ -907,6 +972,8 @@ try {
 			}
 		}
 		$zero_all = count( array_filter( $inbound, static fn( int $v ): bool => 0 === $v ) );
+		$orphans = count( array_filter( $elig_in, static fn( int $n ): bool => 0 === $n ) );
+		$ok( $orphans <= max( 1, (int) floor( 0.05 * count( $elig_in ) ) ), $lang . ': orphans (no inbound related link) <= 5% of the in-stock products of categories > 4 products', $orphans . ' of ' . count( $elig_in ) );
 		$ok( $worst <= 3.0, $lang . ': per category max inbound <= 3x mean (worst ' . round( $worst, 2 ) . 'x)' );
 		$ok( array() === $starved, $lang . ': no eligible candidate starved while an anchor had a free slot', implode( ',', $starved ) . ' | zero inbound overall ' . $zero_all . ' (price band / stock isolation)' );
 	}

@@ -127,8 +127,9 @@ final class Related implements SourceInterface {
 	}
 
 	/**
-	 * Order one tier: shared tags desc, shared attributes desc, per-anchor hash, id; then bound it so a big
-	 * tier cannot crowd out the later ones.
+	 * Order one tier by relevance (shared tags desc, shared attributes desc), then the per-anchor hash, bounded by TIER_CAP. The
+	 * relevance window that spreads the slots is applied AFTER the filters, in `Ranker` (a window cut before them would be spent on
+	 * out-of-stock or out-of-band rows).
 	 *
 	 * @param array<int,array{id:int,src:string,meta:array<string,mixed>}> $rows Tier rows.
 	 * @return array<int,array{id:int,src:string,meta:array<string,mixed>}>
@@ -136,7 +137,7 @@ final class Related implements SourceInterface {
 	private static function sorted( array $rows ): array {
 		usort(
 			$rows,
-			static fn( array $a, array $b ): int => [ 0 - $a['meta']['tags'], 0 - $a['meta']['attr'], 0 - $a['meta']['sales'], $a['meta']['key'], $a['id'] ] <=> [ 0 - $b['meta']['tags'], 0 - $b['meta']['attr'], 0 - $b['meta']['sales'], $b['meta']['key'], $b['id'] ]
+			static fn( array $a, array $b ): int => [ 0 - $a['meta']['tags'], 0 - $a['meta']['attr'], $a['meta']['key'], $a['id'] ] <=> [ 0 - $b['meta']['tags'], 0 - $b['meta']['attr'], $b['meta']['key'], $b['id'] ]
 		);
 		return array_slice( $rows, 0, self::TIER_CAP );
 	}

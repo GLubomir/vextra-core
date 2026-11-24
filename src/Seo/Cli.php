@@ -2,7 +2,7 @@
 /**
  * WP-CLI: `wp vextra seo status` (read-only), `wp vextra seo recount` (idempotent), `wp vextra seo transliterate` (pure) and
  * `wp vextra seo redirects` (read-only list of the redirects written by TermRedirects) and `wp vextra seo apply-config` (idempotent: the
- * three Rank Math redirect settings of ADR-011). CLI only, no web entry point.
+ * three Rank Math redirect settings of ADR-011 + `titles.noindex_password_protected`). CLI only, no web entry point.
  *
  * @package Vextra\Core
  */
@@ -157,13 +157,16 @@ final class Cli {
 			$values['attachment_redirect_default'] = $home;
 		}
 		$changed = $this->rank_math->write_general_settings( $values );
-		if ( null === $changed ) {
-			\WP_CLI::error( 'Could not write rank-math-options-general; set the three settings by hand (docs/system/modules/seo.md).' );
+		$titles  = $this->rank_math->write_titles_settings( [ 'noindex_password_protected' => 'on' ] );
+		if ( null === $changed || null === $titles ) {
+			\WP_CLI::error( 'Could not write the Rank Math options; set the four settings by hand (docs/system/modules/seo.md).' );
 		}
 		foreach ( [ 'redirections_post_redirect', 'attachment_redirect_urls', 'attachment_redirect_default' ] as $key ) {
 			\WP_CLI::log( sprintf( '%s = %s%s', $key, $this->rank_math->stored_general_setting( $key ), in_array( $key, $changed, true ) ? ' (changed)' : '' ) );
 		}
-		\WP_CLI::success( [] === $changed ? 'Already applied, nothing changed.' : sprintf( 'Applied %d setting(s).', count( $changed ) ) );
+		\WP_CLI::log( sprintf( 'titles.noindex_password_protected = %s%s', $this->rank_math->stored_titles_setting( 'noindex_password_protected' ), array() !== $titles ? ' (changed)' : '' ) );
+		$total = count( $changed ) + count( $titles );
+		\WP_CLI::success( 0 === $total ? 'Already applied, nothing changed.' : sprintf( 'Applied %d setting(s).', $total ) );
 	}
 
 	/**

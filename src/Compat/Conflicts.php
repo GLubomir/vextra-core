@@ -141,6 +141,16 @@ final class Conflicts {
 				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
+				'id'       => 'rankmath-password-noindex',
+				'title'    => static fn(): string => __( 'Rank Math: захищені паролем сторінки й товари не мають noindex', 'vextra-core' ),
+				'module'   => 'seo',
+				'detector' => fn() => $this->detect_rankmath_password_noindex(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Rank Math → Titles & Meta → Misc → «Noindex Password-protected Pages» має бути увімкнено (або `wp vextra seo apply-config`): такі товари не рекламуються у списках, а сторінка не має потрапляти в індекс.', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
 				'id'       => 'duplicate-translit-plugin',
 				'title'    => static fn(): string => __( 'Активний плагін транслітерації: модуль seo-urls (слаги й імена файлів) вимкнено', 'vextra-core' ),
 				'module'   => 'seo-urls',
@@ -482,6 +492,17 @@ final class Conflicts {
 			return false;
 		}
 		return ! $this->is_on( $rank->setting( 'general.redirections_post_redirect', 'off' ) );
+	}
+
+	/**
+	 * Password-protected posts / products are `noindex` (their URL stays reachable, but must not enter the index).
+	 */
+	private function detect_rankmath_password_noindex(): bool {
+		$rank = Plugin::instance()->integration( 'rankmath' );
+		if ( ! $rank instanceof RankMath || ! $rank->is_available() || ! $this->module_active( 'seo' ) ) {
+			return false;
+		}
+		return ! $this->is_on( $rank->setting( 'titles.noindex_password_protected', 'off' ) );
 	}
 
 	/**
