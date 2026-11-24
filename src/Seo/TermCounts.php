@@ -20,6 +20,8 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Support\Listable;
+
 use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Support\Cache;
 
@@ -238,13 +240,14 @@ final class TermCounts {
 			"SELECT tt.term_id, tt.parent, COUNT( DISTINCT p.ID ) AS n
 			FROM {$wpdb->term_taxonomy} tt
 			LEFT JOIN {$wpdb->term_relationships} tr ON tr.term_taxonomy_id = tt.term_taxonomy_id
-			LEFT JOIN {$wpdb->posts} p ON p.ID = tr.object_id AND p.post_type = %s AND p.post_status = %s
+			LEFT JOIN {$wpdb->posts} p ON p.ID = tr.object_id AND p.post_type = %s AND p.post_status = %s /*LISTABLE*/
 			WHERE tt.taxonomy = %s
 			GROUP BY tt.term_id, tt.parent",
 			'product',
 			'publish',
 			self::TAXONOMY
 		);
+		$sql  = str_replace( '/*LISTABLE*/', Listable::sql( 'p' ), $sql ); // SEC-066: protected products are not counted.
 		$rows = $wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
 
 		$direct  = [];

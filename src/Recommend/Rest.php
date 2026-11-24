@@ -9,6 +9,7 @@
  * - `post_add`: the language is the one of the product; the result depends only on the product (the server cart is NOT read), so it
  *   is publicly cacheable: `Cache-Control: public, max-age=300`. The client hides ids already in its cart.
  * - `cart`: the cart comes from the server session (`wc_load_cart()`); any client-supplied ids are ignored; `Cache-Control: no-store`.
+ * - A password-protected, hidden, unpublished or unknown product as `post_add` anchor answers the same generic 400 (SEC-066).
  * - Params are validated (context enum, positive integer id, language slug); errors are a generic 400 without detail.
  * - Rate limit: the Guard `rest` bucket already counts every anonymous REST route (`Guard\StoreApi::check()`); 429 + `Retry-After`.
  * - WordPress core adds `X-Robots-Tag: noindex` to every REST response; the route is in no link, sitemap or robots.txt line.
@@ -87,7 +88,7 @@ final class Rest {
 		if ( 'post_add' === $context ) {
 			$id    = absint( $request->get_param( 'product_id' ) );
 			$facts = $id > 0 ? Pool::light( [ $id ] )[ $id ] ?? [] : [];
-			if ( array() === $facts || 'publish' !== $facts['status'] || ! empty( $facts['hidden'] ) ) {
+			if ( array() === $facts || 'publish' !== $facts['status'] || ! empty( $facts['hidden'] ) || ! empty( $facts['protected'] ) ) {
 				return new \WP_Error( 'vx_rec_bad_request', 'Invalid request.', [ 'status' => 400 ] );
 			}
 			$own  = Pool::language_of( $id );

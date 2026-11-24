@@ -88,6 +88,9 @@ final class Filters {
 		if ( 'publish' !== $f['status'] ) {
 			return [ 'status', 'status ' . $f['status'] ];
 		}
+		if ( ! empty( $f['protected'] ) ) {
+			return [ 'status', 'password protected' ]; // SEC-066: never advertised.
+		}
 		if ( '' !== $ctx['lang'] && '' !== $f['lang'] && $f['lang'] !== $ctx['lang'] ) {
 			return [ 'language', 'language ' . $f['lang'] ];
 		}

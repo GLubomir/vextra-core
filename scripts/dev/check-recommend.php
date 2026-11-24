@@ -400,24 +400,24 @@ try {
 	$stale_view = $ids( Engine::recommend( 'product', [ 'product_id' => $A, 'list' => 'related', 'limit' => 8 ] ) );
 	$ok( in_array( $B4, $stale_view, true ), 'stale entry is served at once (no synchronous rebuild)', wp_json_encode( $stale_view ) );
 	Cache::run_deferred();
-	$pending = function_exists( 'as_get_scheduled_actions' ) ? as_get_scheduled_actions( [ 'hook' => Cache::REBUILD_HOOK, 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => 20 ], 'ids' ) : [];
-	$mine    = 0;
-	foreach ( $pending as $aid ) {
-		$action = ActionScheduler::store()->fetch_action( $aid );
-		if ( str_contains( (string) wp_json_encode( $action->get_args() ), 'product:' . $A . ':uk' ) ) {
-			++$mine;
+	// Count the rebuild jobs of this entry in ANY state: the Action Scheduler loopback runner may already have executed a pending one.
+	$jobs = static function ( string $needle ): int {
+		$n = 0;
+		foreach ( [ ActionScheduler_Store::STATUS_PENDING, ActionScheduler_Store::STATUS_RUNNING, ActionScheduler_Store::STATUS_COMPLETE ] as $status ) {
+			foreach ( as_get_scheduled_actions( [ 'hook' => Cache::REBUILD_HOOK, 'status' => $status, 'per_page' => 50 ], 'ids' ) as $aid ) {
+				if ( str_contains( (string) wp_json_encode( ActionScheduler::store()->fetch_action( $aid )->get_args() ), $needle ) ) {
+					++$n;
+				}
+			}
 		}
-	}
+		return $n;
+	};
+	$mine = $jobs( 'product:' . $A . ':uk' );
 	$ok( 1 === $mine, 'ONE deduplicated Action Scheduler job queued for the stale entry', (string) $mine );
 	Store::reset_memo();
 	Engine::recommend( 'product', [ 'product_id' => $A, 'list' => 'related' ] );
 	Cache::run_deferred();
-	$mine2 = 0;
-	foreach ( as_get_scheduled_actions( [ 'hook' => Cache::REBUILD_HOOK, 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => 20 ], 'ids' ) as $aid ) {
-		if ( str_contains( (string) wp_json_encode( ActionScheduler::store()->fetch_action( $aid )->get_args() ), 'product:' . $A . ':uk' ) ) {
-			++$mine2;
-		}
-	}
+	$mine2 = $jobs( 'product:' . $A . ':uk' );
 	$ok( 1 === $mine2, 'a second stale read does not enqueue a second job', (string) $mine2 );
 	do_action( Cache::REBUILD_HOOK, Store::GROUP, $key ); // What the job does.
 	Store::reset_memo();
@@ -634,6 +634,55 @@ try {
 		$res = rest_do_request( $req );
 		$ok( $status === $res->get_status(), 'REST lang=' . $code . ' -> ' . $status, (string) $res->get_status() );
 	}
+
+	// ------------------------------------------------------------------------------------------------------------ SEC-066 / SEC-067
+	WP_CLI::line( 'SEC-066 password-protected products, SEC-067 client key' );
+	$prot_cat = wp_insert_term( 't038-cat-prot', 'product_cat' );
+	$prot_cat = (int) $prot_cat['term_id'];
+	pll_set_term_language( $prot_cat, 'uk' );
+	$state['terms'][] = $prot_cat;
+	$P_anchor = $mk( 'prot-anchor', 100, [ $prot_cat ] );
+	$P_open   = $mk( 'prot-open', 100, [ $prot_cat ] );
+	$P_secret = $mk( 'prot-secret', 100, [ $prot_cat ] );
+	$P_sale   = $mk( 'prot-sale', 100, [ $prot_cat ] );
+	foreach ( [ $P_secret, $P_sale ] as $pid ) {
+		$pp = wc_get_product( $pid );
+		$pp->set_post_password( 'secret' );
+		if ( $pid === $P_sale ) {
+			$pp->set_sale_price( '50' );
+		}
+		$pp->save();
+	}
+	$pa = wc_get_product( $P_anchor );
+	$pa->set_upsell_ids( [ $P_secret ] );
+	$pa->set_cross_sell_ids( [ $P_secret ] );
+	$pa->save();
+	$ex = Engine::explain( 'product', [ $P_anchor ], 'uk' );
+	$all_ids = array_merge( $ids( $ex['lists']['related'] ), $ids( $ex['lists']['accessories'] ), $ids( $ex['lists']['post_add'] ) );
+	$ok( ! in_array( $P_secret, $all_ids, true ) && in_array( $P_open, $ids( $ex['lists']['related'] ), true ), 'protected product is in no list (related, upsell, post_add), the open one is' );
+	$why = [];
+	foreach ( $ex['trace']['lists']['accessories']['filters'] as $row ) {
+		foreach ( $row['dropped'] as $d ) {
+			$why[ $d[0] ] = $d[1];
+		}
+	}
+	$ok( 'password protected' === ( $why[ $P_secret ] ?? '' ), 'explain names the reason', (string) ( $why[ $P_secret ] ?? '' ) );
+	$ok( array() === Engine::explain( 'product', [ $P_secret ], 'uk' )['lists']['related'] && array() === $engine_ids( 'product', [ 'product_id' => $P_secret, 'list' => 'related' ] ), 'a protected anchor gets no recommendations' );
+	$req = new WP_REST_Request( 'GET', '/vextra/v1/recommend' );
+	$req->set_query_params( [ 'context' => 'post_add', 'product_id' => $P_secret ] );
+	$ok( 400 === rest_do_request( $req )->get_status(), 'REST: a protected anchor answers the generic 400' );
+	$bs = array_keys( Pool::bestsellers( 'uk' ) );
+	$ok( ! in_array( $P_secret, $bs, true ), 'bestseller tier never lists it' );
+	$ok( [ $P_open ] === array_values( array_intersect( \Vextra\Core\Support\Listable::ids( [ $P_open, $P_secret ] ), [ $P_open, $P_secret ] ) ), 'Support\Listable::ids drops it' );
+	$lk = $woo->lookup();
+	$ok( ! array_key_exists( $P_secret, (array) $lk->facts_by_terms( [ $prot_cat ], 0, false ) ) && array_key_exists( $P_open, (array) $lk->facts_by_terms( [ $prot_cat ], 0, false ) ), 'lookup facts (catalog counts) skip it' );
+	$ok( ! in_array( $P_secret, $lk->product_ids_in_terms( [ $prot_cat ], 50 ), true ), 'category id query skips it' );
+	$ok( ! in_array( $P_sale, \Vextra\Core\Catalog\SaleProducts::ids( 'uk' ), true ), 'sale list skips a protected product on sale' );
+	$ok( ! in_array( $P_secret, apply_filters( 'vextra/catalog/listable_ids', wc_get_related_products( $P_anchor, 10 ) ), true ), 'related fallback filter drops it' );
+	$ok( 2 === (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p INNER JOIN {$wpdb->term_relationships} tr ON tr.object_id = p.ID INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id WHERE tt.term_id = %d AND p.post_status = 'publish'" . \Vextra\Core\Support\Listable::sql( 'p' ), $prot_cat ) ), 'SQL helper fragment keeps only the 2 open products of the category' );
+	$q = new WP_Query( \Vextra\Core\Support\Listable::apply( [ 'post_type' => 'product', 'fields' => 'ids', 'post__in' => [ $P_open, $P_secret ], 'lang' => '' ] ) );
+	$ok( [ $P_open ] === array_map( 'intval', $q->posts ), 'Listable::apply on WP_Query args' );
+	$ok( \Vextra\Core\Guard\ClientIp::mask( '2001:db8:1:2:aaaa:bbbb:cccc:dddd' ) === \Vextra\Core\Guard\ClientIp::mask( '2001:db8:1:2::1' ) && '2001:db8:1:2::/64' === \Vextra\Core\Guard\ClientIp::mask( '2001:db8:1:2:aaaa:bbbb:cccc:dddd' ) && '203.0.113.9' === \Vextra\Core\Guard\ClientIp::mask( '::ffff:203.0.113.9' ), 'SEC-067: Guard keys IPv6 by /64 and unmaps IPv4 (the recommend route uses the Guard `rest` bucket, no own key)' );
 
 	// ------------------------------------------------------------------------------------------------------------ AC15 conflict guard + kill switch
 	WP_CLI::line( 'AC15 conflict guard and kill switch' );

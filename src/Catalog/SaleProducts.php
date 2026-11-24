@@ -19,6 +19,7 @@ use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Plugin;
 use Vextra\Core\Support\Cache;
+use Vextra\Core\Support\Listable;
 
 final class SaleProducts {
 
@@ -106,7 +107,7 @@ final class SaleProducts {
 			$ids = array_values( array_filter( $ids, static fn( int $id ): bool => $pll->post_language( $id ) === $lang ) );
 		}
 
-		$ids = $woo->on_sale_now( $ids );
+		$ids = Listable::ids( $woo->on_sale_now( $ids ) ); // SEC-066: protected products are not advertised.
 		sort( $ids );
 		return $ids;
 	}

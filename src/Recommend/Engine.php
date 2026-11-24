@@ -182,8 +182,8 @@ final class Engine {
 			return null;
 		}
 		$facts = Pool::light( [ $id ] )[ $id ] ?? [];
-		if ( array() === $facts || 'publish' !== $facts['status'] ) {
-			return null;
+		if ( array() === $facts || 'publish' !== $facts['status'] || ! empty( $facts['protected'] ) ) {
+			return null; // Unknown, unpublished or password-protected: no recommendations for it.
 		}
 		return new Anchor( $id, $lang, (float) $facts['min'], Fields::partner( $id ) );
 	}
