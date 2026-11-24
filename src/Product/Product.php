@@ -48,6 +48,7 @@ final class Product implements ModuleInterface {
 		Bundle::register();
 		InfoRows::register();
 		( new CardsRest() )->register();
+		( new StockMessages() )->register();
 		( new SwatchFields() )->register();
 		( new PdpInfoPage() )->register();
 

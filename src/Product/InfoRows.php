@@ -58,6 +58,7 @@ final class InfoRows {
 	public static function register(): void {
 		add_action( 'add_option_' . self::OPTION, [ self::class, 'flush' ] );
 		add_action( 'update_option_' . self::OPTION, [ self::class, 'flush' ] );
+		add_action( 'delete_option_' . self::OPTION, [ self::class, 'flush' ] );
 		add_action( 'post_updated', [ self::class, 'on_post' ], 10, 1 );
 		add_action( 'updated_post_meta', [ self::class, 'on_meta' ], 10, 3 );
 		add_action( 'added_post_meta', [ self::class, 'on_meta' ], 10, 3 );
