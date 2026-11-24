@@ -56,6 +56,8 @@ final class Conflicts {
 		'recommend' => [ 'yith-woocommerce-frequently-bought-together', 'yith-woocommerce-related-products', 'woocommerce-product-recommendations', 'woo-related-products-refresh-on-reload', 'wc-frequently-bought-together', 'cartflows-pro', 'wpc-frequently-bought-together', 'wpc-related-products', 'woo-product-recommendations' ],
 		// Variation swatch / product gallery / sticky add-to-cart plugins: the product module + theme own the gallery, swatches and buy box. Slugs from wordpress.org (2026-11).
 		'pdp'       => [ 'woo-variation-swatches', 'variation-swatches-for-woocommerce', 'woo-variation-gallery', 'yith-woocommerce-color-label-variations', 'yith-woocommerce-color-and-label-variations', 'woo-product-gallery-slider', 'sticky-add-to-cart-for-woocommerce', 'wpc-variations-radio-buttons', 'wpc-variation-swatches', 'wpc-product-gallery', 'woo-variation-swatches-pro' ],
+		// Image format converters / optimisers that write or serve WebP / AVIF themselves (they own the formats; the media module yields). `duplicate-image-optimizer-plugin` is NOT here: a duplicate finder, no format conversion known (no wordpress.org listing, behaviour unverified) -> own warn rule. Slugs from wordpress.org.
+		'imgformat' => [ 'webp-express', 'webp-converter-for-media', 'imagify', 'shortpixel-image-optimiser', 'ewww-image-optimizer', 'ewww-image-optimizer-cloud', 'optimole-wp', 'wp-smushit', 'wp-smush-pro', 'smush-pro', 'tiny-compress-images', 'robin-image-optimizer', 'sirv' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -251,6 +253,26 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Тема і vextra-core вже відкладають jQuery, знімають зайві скрипти / стилі WooCommerce та WordPress і пропускають непотрібні блоки. Другий оптимізатор може подвоїти або зламати це: вимкніть у ньому відкладання / видалення скриптів, або вимкніть наш пункт (константа VX_PERF_DISABLED, фільтр vextra/assets/policy).', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-image-format-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін конвертації зображень (WebP / AVIF): модуль media вимкнено', 'vextra-core' ),
+				'module'   => 'media',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['imgformat'] ),
+				'action'   => self::ACTION_YIELD,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Формати зображень веде інший плагін, vextra-core не втручається (інакше подвійні файли й зламані srcset). Деактивуйте плагін, щоб формати вів vextra-core, або лишіть як є: сайт працює. Після зміни виконайте `wp vextra media regenerate`.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-image-optimizer-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін «Duplicate Image Optimizer»: перевірте, що його конвертація форматів вимкнена', 'vextra-core' ),
+				'module'   => 'media',
+				'detector' => fn() => $this->module_active( 'media' ) ? $this->detect_plugins( [ 'duplicate-image-optimizer-plugin' ] ) : false,
+				'action'   => self::ACTION_WARN,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Плагін шукає дублікати зображень; даних про конвертацію форматів немає (сторінки в wordpress.org немає, поведінку не перевірено). Якщо в ньому є «convert to WebP / AVIF», вимкніть її: формати веде vextra-core (модуль media).', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[

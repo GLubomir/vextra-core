@@ -348,4 +348,46 @@ final class WooCommerce extends AbstractIntegration {
 	public function low_stock_threshold(): int {
 		return $this->is_available() ? max( 0, (int) get_option( 'woocommerce_notify_low_stock_amount', 2 ) ) : 2;
 	}
+
+	/**
+	 * Enqueue a single Action Scheduler job after a delay (no dedup). Fallback: false.
+	 *
+	 * @param string            $hook  Action hook.
+	 * @param array<int,string> $args  Job args (scalars only).
+	 * @param string            $group Action Scheduler group.
+	 * @param int               $delay Seconds from now.
+	 */
+	public function enqueue_single_action( string $hook, array $args, string $group, int $delay ): bool {
+		if ( ! $this->has_action_scheduler() || ! function_exists( 'as_schedule_single_action' ) ) {
+			return false;
+		}
+		return 0 !== (int) as_schedule_single_action( time() + max( 0, $delay ), $hook, $args, $group );
+	}
+
+	/**
+	 * Number of pending or running Action Scheduler jobs of a hook / group (capped at 2: callers only test for "none"). Fallback: 0.
+	 *
+	 * @param string $hook  Action hook.
+	 * @param string $group Action Scheduler group.
+	 */
+	public function open_actions( string $hook, string $group ): int {
+		if ( ! $this->has_action_scheduler() || ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return 0;
+		}
+		$count = 0;
+		foreach ( [ 'pending', 'in-progress' ] as $status ) {
+			$count += count(
+				(array) as_get_scheduled_actions(
+					[
+						'hook'     => $hook,
+						'group'    => $group,
+						'status'   => $status,
+						'per_page' => 2,
+					],
+					'ids'
+				)
+			);
+		}
+		return $count;
+	}
 }

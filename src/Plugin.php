@@ -27,6 +27,7 @@ use Vextra\Core\Integrations\RankMath\RankMath;
 use Vextra\Core\Integrations\Turnstile\Turnstile;
 use Vextra\Core\Integrations\TwoFactor\TwoFactor;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
+use Vextra\Core\Media\Module as Media;
 use Vextra\Core\Multilang\Multilang;
 use Vextra\Core\Performance\OptionPriming;
 use Vextra\Core\Performance\Performance;
@@ -57,6 +58,7 @@ final class Plugin {
 		Catalog::class,
 		Recommend::class,
 		Product::class,
+		Media::class,
 	];
 
 	/**

@@ -11,6 +11,7 @@ namespace Vextra\Core\Health;
 
 use Vextra\Core\Contracts\ModuleInterface;
 use Vextra\Core\Integrations\Polylang\Polylang;
+use Vextra\Core\Media\Formats;
 use Vextra\Core\Plugin;
 
 final class Health implements ModuleInterface {
@@ -65,6 +66,7 @@ final class Health implements ModuleInterface {
 		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['modules'] ), [ 'id', 'enabled', 'yielded' ] );
 		\WP_CLI::log( 'Integrations:' );
 		\WP_CLI\Utils\format_items( 'table', array_map( [ $this, 'yes_no' ], $data['integrations'] ), [ 'id', 'available', 'version', 'ready' ] );
+		\WP_CLI::log( 'Image formats (this PHP runtime): ' . $data['media']['summary'] );
 	}
 
 	/**
@@ -82,6 +84,31 @@ final class Health implements ModuleInterface {
 			}
 		}
 		return $row;
+	}
+
+	/**
+	 * Image format capability of the PHP runtime that runs this command (the web runtime can differ: `wp vextra media status`).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function media(): array {
+		$caps    = Formats::capabilities();
+		$yn      = static fn( bool $v ): string => $v ? 'yes' : 'no';
+		$summary = sprintf(
+			'%s | GD webp %s avif %s | Imagick %s webp %s avif %s | target %s',
+			$caps['sapi'],
+			$yn( (bool) $caps['gd_webp'] ),
+			$yn( (bool) $caps['gd_avif'] ),
+			$yn( (bool) $caps['imagick'] ),
+			$yn( (bool) $caps['imagick_webp'] ),
+			$yn( (bool) $caps['imagick_avif'] ),
+			Formats::target()
+		);
+		return [
+			'caps'    => $caps,
+			'target'  => Formats::target(),
+			'summary' => $summary,
+		];
 	}
 
 	/**
@@ -120,6 +147,7 @@ final class Health implements ModuleInterface {
 			'wc'             => null !== $woo && $woo->is_available() ? $woo->version() : null,
 			'modules'        => $modules,
 			'integrations'   => $integrations,
+			'media'          => $this->media(),
 		];
 	}
 }
