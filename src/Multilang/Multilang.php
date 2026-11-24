@@ -51,14 +51,15 @@ final class Multilang implements ModuleInterface {
 
 		( new WooPages( $pll, $rank ) )->register();
 		$sync->register();
-		( new StockSync( $pll ) )->register();
+		$stock = new StockSync( $pll );
+		$stock->register();
 		( new OrderLanguage( $pll ) )->register();
 		$counts = new TermCounts( $rank );
 		$counts->register();
 		( new Hreflang( $pll, $rank, $counts ) )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			( new Cli( $pll, $sync ) )->register();
+			( new Cli( $pll, $sync, $stock ) )->register();
 		}
 	}
 }
