@@ -25,6 +25,33 @@ use Vextra\Core\Reviews\Policy;
 final class ReviewsData {
 
 	/**
+	 * Approved review count per product, memoised for the request (the schema filter reuses what the page already counted).
+	 *
+	 * @var array<int,int>
+	 */
+	private static array $approved = [];
+
+	/**
+	 * Number of approved top-level reviews (the truth, never the stored Woo counter).
+	 *
+	 * @param int $product_id Product id.
+	 */
+	public static function approved_count( int $product_id ): int {
+		if ( ! isset( self::$approved[ $product_id ] ) ) {
+			self::$approved[ $product_id ] = (int) get_comments(
+				[
+					'post_id'  => $product_id,
+					'status'   => 'approve',
+					'parent'   => 0,
+					'type__in' => [ 'review', 'comment' ],
+					'count'    => true,
+				]
+			);
+		}
+		return self::$approved[ $product_id ];
+	}
+
+	/**
 	 * Reviews view-model of a product.
 	 *
 	 * @param int $product_id Product id.
@@ -56,8 +83,17 @@ final class ReviewsData {
 		$out['count'] = $count;
 		$out['avg']   = round( (float) $product->get_average_rating(), 1 );
 		$out['list']  = self::newest( $product_id );
-		// Every review is in the list when it holds fewer than the page size: count the stars in PHP (no grouped query).
-		$out['histogram'] = count( $out['list'] ) < max( 1, Config::get( 'per_page' ) ) ? self::stars_of( $out['list'] ) : self::histogram( $product_id );
+		if ( count( $out['list'] ) < max( 1, Config::get( 'per_page' ) ) ) {
+			// Every approved review is in the list: it is the truth. A stale / imported counter (phantom rating, SEO) never reaches the page.
+			$rated                         = array_values( array_filter( $out['list'], static fn( array $r ): bool => (int) $r['rating'] > 0 ) );
+			$out['histogram']              = self::stars_of( $out['list'] );
+			$out['count']                  = count( $rated );
+			$out['avg']                    = array() === $rated ? 0.0 : round( array_sum( array_column( $rated, 'rating' ) ) / count( $rated ), 1 );
+			self::$approved[ $product_id ] = count( $out['list'] );
+		} else {
+			$out['histogram']              = self::histogram( $product_id );
+			self::$approved[ $product_id ] = $count;
+		}
 		return $out;
 	}
 

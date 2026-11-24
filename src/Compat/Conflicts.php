@@ -19,6 +19,7 @@ declare(strict_types=1);
 namespace Vextra\Core\Compat;
 
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Plugin;
 use Vextra\Core\Reviews\Options as ReviewOptions;
 use Vextra\Core\Security\TwoFactorPolicy;
@@ -300,6 +301,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => true,
 				'fix_hint' => static fn(): string => __( 'Виконайте `wp vextra reviews reconcile` (значення в БД). Якщо розбіжність лишається, плагін фільтрує опцію через option_* / pre_option_*: вимкніть цей фільтр.', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
+				'id'       => 'rating-meta-without-reviews',
+				'title'    => static fn(): string => __( 'Лічильник відгуків / рейтинг товару без жодного схваленого відгуку (Rank Math друкує AggregateRating)', 'vextra-core' ),
+				'module'   => 'reviews',
+				'detector' => fn() => $this->detect_phantom_ratings(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Виконайте `wp vextra reviews recount`. Імпорт постачальника не має писати _wc_review_count / _wc_average_rating / _wc_rating_count.', 'vextra-core' ),
 				'scope'    => self::SCOPE_SETTINGS,
 			],
 			[
@@ -595,6 +606,20 @@ final class Conflicts {
 		}
 		$bad = array_unique( array_merge( array_keys( ReviewOptions::drift() ), array_keys( ReviewOptions::overridden() ) ) );
 		return array() === $bad ? false : implode( ', ', array_slice( $bad, 0, 10 ) ) . ( count( $bad ) > 10 ? '…' : '' );
+	}
+
+	/**
+	 * Products whose rating counter says reviews exist while no approved review does (SEO: phantom AggregateRating).
+	 *
+	 * @return string|false
+	 */
+	private function detect_phantom_ratings() {
+		$woo = Plugin::instance()->integration( 'woocommerce' );
+		if ( ! $this->module_active( 'reviews' ) || ! $woo instanceof WooCommerce ) {
+			return false;
+		}
+		$ids = $woo->products_with_phantom_ratings( 20 );
+		return array() === $ids ? false : '#' . implode( ', #', $ids );
 	}
 
 	/**

@@ -1,6 +1,6 @@
 <?php
 /**
- * WP-CLI: `wp vextra reviews status|reconcile|close-legacy [--dry-run]` (TASK-030). CLI only, no web entry point.
+ * WP-CLI: `wp vextra reviews status|reconcile|close-legacy [--dry-run]|recount [--dry-run]` (TASK-030). CLI only, no web entry point.
  *
  * @package Vextra\Core
  */
@@ -24,6 +24,21 @@ final class Cli {
 			'vextra reviews reconcile',
 			[ $this, 'reconcile' ],
 			[ 'shortdesc' => 'Write the policy values of the comment / review options into the database (the effective value is forced anyway).' ]
+		);
+		\WP_CLI::add_command(
+			'vextra reviews recount',
+			[ $this, 'recount' ],
+			[
+				'shortdesc' => 'Recompute _wc_review_count / _wc_rating_count / _wc_average_rating of every product (all languages) from APPROVED reviews only.',
+				'synopsis'  => [
+					[
+						'type'        => 'flag',
+						'name'        => 'dry-run',
+						'description' => 'Only report the products that would change.',
+						'optional'    => true,
+					],
+				],
+			]
 		);
 		\WP_CLI::add_command(
 			'vextra reviews close-legacy',
@@ -65,6 +80,22 @@ final class Cli {
 	public function reconcile(): void {
 		$changed = Options::reconcile();
 		\WP_CLI::success( array() === $changed ? 'Options already match the policy.' : 'Restored: ' . implode( ', ', $changed ) );
+	}
+
+	/**
+	 * `wp vextra reviews recount [--dry-run]`.
+	 *
+	 * @param array<int,string>    $args  Positional args.
+	 * @param array<string,string> $assoc Flags.
+	 */
+	public function recount( $args = [], $assoc = [] ): void {
+		unset( $args );
+		$dry    = isset( $assoc['dry-run'] );
+		$result = Recount::run( $dry );
+		foreach ( $result['changed'] as $row ) {
+			\WP_CLI::log( sprintf( '#%d  count / avg  %s  ->  %s', $row['id'], $row['before'], $row['after'] ) );
+		}
+		\WP_CLI::success( sprintf( '%s %d of %d product(s).', $dry ? 'Would change' : 'Changed', count( $result['changed'] ), $result['checked'] ) );
 	}
 
 	/**
