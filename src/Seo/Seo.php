@@ -12,6 +12,9 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Catalog\Cli as CatalogCli;
+use Vextra\Core\Catalog\SalePage;
+use Vextra\Core\Catalog\SaleProducts;
 use Vextra\Core\Contracts\ModuleInterface;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
@@ -62,9 +65,13 @@ final class Seo implements ModuleInterface {
 		( new Organization( $rank, $pll ) )->register();
 		( new Attributes( $rank ) )->register();
 		( new TermRedirects( $rank ) )->register();
+		( new PagedGuard() )->register();
+		( new SalePage( $pll, $rank ) )->register();
+		( new SaleProducts() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			( new Cli( $pll, $rank, $counts, new Transliterator() ) )->register();
+			( new CatalogCli( $pll ) )->register();
 		}
 	}
 }

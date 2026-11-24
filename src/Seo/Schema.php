@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Catalog\SalePage;
 use Vextra\Core\Integrations\RankMath\RankMath;
 
 final class Schema {
@@ -28,6 +29,7 @@ final class Schema {
 	public function register(): void {
 		$this->rank_math->filter_product_entity( [ $this, 'product' ] );
 		$this->rank_math->filter_json_ld( [ $this, 'home_graph' ] );
+		$this->rank_math->filter_json_ld( [ $this, 'sale_graph' ] );
 	}
 
 	/**
@@ -60,6 +62,32 @@ final class Schema {
 			$id    = (string) ( $node['@id'] ?? '' );
 			if ( array_intersect( $types, [ 'Article', 'BlogPosting', 'NewsArticle' ] ) || ( in_array( 'Person', $types, true ) && str_ends_with( $id, '#author' ) ) ) {
 				unset( $graph[ $key ] );
+			}
+		}
+		return $graph;
+	}
+
+	/**
+	 * Sale pages (`vx_sale_pages`, UA + RU) are listing pages: Rank Math's default page schema (Article + Person author) is removed and the
+	 * WebPage node becomes a CollectionPage. Organization, WebSite and the breadcrumbs stay.
+	 *
+	 * @param mixed $graph JSON-LD nodes keyed by Rank Math.
+	 * @return mixed
+	 */
+	public function sale_graph( $graph ) {
+		if ( ! is_array( $graph ) || ! class_exists( SalePage::class ) || ! SalePage::is_sale_page() ) {
+			return $graph;
+		}
+		foreach ( $graph as $key => $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+			$types = array_map( 'strval', (array) ( $node['@type'] ?? [] ) );
+			$id    = (string) ( $node['@id'] ?? '' );
+			if ( array_intersect( $types, [ 'Article', 'BlogPosting', 'NewsArticle' ] ) || ( in_array( 'Person', $types, true ) && str_ends_with( $id, '#author' ) ) ) {
+				unset( $graph[ $key ] );
+			} elseif ( in_array( 'WebPage', $types, true ) ) {
+				$graph[ $key ]['@type'] = 'CollectionPage';
 			}
 		}
 		return $graph;

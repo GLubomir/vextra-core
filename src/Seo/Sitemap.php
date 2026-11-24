@@ -18,6 +18,8 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
+use Vextra\Core\Catalog\SalePage;
+use Vextra\Core\Catalog\SaleProducts;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
 
@@ -105,7 +107,22 @@ final class Sitemap {
 			$keep           = $front > 0 ? array_merge( [ $front ], array_values( $this->polylang->translations( $front ) ) ) : [];
 			self::$excluded = array_values( array_diff( array_map( 'intval', (array) $query->posts ), array_map( 'intval', $keep ) ) );
 		}
-		return array_values( array_unique( array_merge( array_map( 'intval', is_array( $ids ) ? $ids : [] ), self::$excluded ) ) );
+		return array_values( array_unique( array_merge( array_map( 'intval', is_array( $ids ) ? $ids : [] ), self::$excluded, $this->empty_sale_pages() ) ) );
+	}
+
+	/**
+	 * Sale pages of the languages that have no product on sale now (they are noindex, see `Robots`, and must not be listed).
+	 *
+	 * @return int[]
+	 */
+	private function empty_sale_pages(): array {
+		$out = [];
+		foreach ( SalePage::map() as $lang => $page_id ) {
+			if ( 0 === SaleProducts::count( (string) $lang ) ) {
+				$out[] = $page_id;
+			}
+		}
+		return $out;
 	}
 
 	/**

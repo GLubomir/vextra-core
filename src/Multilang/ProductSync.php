@@ -312,7 +312,7 @@ final class ProductSync {
 			}
 		}
 
-		$attributes = $this->merge_attributes( $source, $twin );
+		$attributes = $this->merge_attributes( $source, $twin, $lang );
 		if ( null !== $attributes ) {
 			$changed[] = 'attributes';
 			if ( ! $dry ) {
@@ -413,8 +413,7 @@ final class ProductSync {
 				continue;
 			}
 			if ( $attribute->is_taxonomy() ) {
-				$options = array_map( 'intval', $attribute->get_options() );
-				sort( $options );
+				$options                         = $this->neutral_options( $attribute );
 				$attrs[ $attribute->get_name() ] = [ $options, $attribute->get_position(), $attribute->get_visible(), $attribute->get_variation() ];
 			} else {
 				$names[] = $attribute->get_name();
@@ -491,9 +490,10 @@ final class ProductSync {
 	 *
 	 * @param \WC_Product $source Source.
 	 * @param \WC_Product $twin   Twin.
+	 * @param string      $lang   Twin language (terms of translated `pa_*` taxonomies are mapped to it).
 	 * @return array<string,\WC_Product_Attribute>|null
 	 */
-	private function merge_attributes( \WC_Product $source, \WC_Product $twin ): ?array {
+	private function merge_attributes( \WC_Product $source, \WC_Product $twin, string $lang ): ?array {
 		$result  = [];
 		$differs = false;
 
@@ -521,10 +521,11 @@ final class ProductSync {
 			if ( $attribute->is_taxonomy() ) {
 				$seen[ $key ] = true;
 				$current      = $mine[ $key ] ?? null;
-				if ( ! $current instanceof \WC_Product_Attribute || $this->attribute_signature( $current ) !== $this->attribute_signature( $attribute ) ) {
+				$wanted       = $this->localized( $attribute, $lang ); // Twin terms of the language: a twin still on the source terms differs.
+				if ( ! $current instanceof \WC_Product_Attribute || $this->attribute_signature( $current ) !== $this->attribute_signature( $wanted ) ) {
 					$differs = true;
 				}
-				$result[ $key ] = clone $attribute;
+				$result[ $key ] = $wanted;
 			} elseif ( isset( $mine[ $key ] ) ) {
 				$result[ $key ] = $mine[ $key ]; // Custom attribute the twin already has: values stay per language.
 				$seen[ $key ]   = true;
@@ -559,6 +560,36 @@ final class ProductSync {
 		$options = array_map( 'intval', $attribute->get_options() );
 		sort( $options );
 		return [ $options, $attribute->get_position(), $attribute->get_visible(), $attribute->get_variation() ];
+	}
+
+	/**
+	 * Default-language (neutral) sorted term ids of a taxonomy attribute: a twin pointing at the RU terms equals the source.
+	 *
+	 * @param \WC_Product_Attribute $attribute Attribute.
+	 * @return int[]
+	 */
+	private function neutral_options( \WC_Product_Attribute $attribute ): array {
+		$options = array_values( array_unique( array_map( [ $this, 'neutral_term' ], array_map( 'intval', $attribute->get_options() ) ) ) );
+		sort( $options );
+		return $options;
+	}
+
+	/**
+	 * Copy of a source attribute whose terms are the twins of the language (a term without a twin, e.g. an untranslated taxonomy,
+	 * keeps its id).
+	 *
+	 * @param \WC_Product_Attribute $attribute Source attribute.
+	 * @param string                $lang      Twin language.
+	 */
+	private function localized( \WC_Product_Attribute $attribute, string $lang ): \WC_Product_Attribute {
+		$copy    = clone $attribute;
+		$options = [];
+		foreach ( array_map( 'intval', $attribute->get_options() ) as $term_id ) {
+			$local     = '' !== $lang && $term_id > 0 ? $this->polylang->translate_term( $term_id, $lang ) : 0;
+			$options[] = $local > 0 ? $local : $term_id;
+		}
+		$copy->set_options( array_values( array_unique( $options ) ) );
+		return $copy;
 	}
 
 	/**

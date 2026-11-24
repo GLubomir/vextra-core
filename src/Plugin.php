@@ -14,6 +14,7 @@ namespace Vextra\Core;
 
 use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Vextra\Core\Admin\Notices;
+use Vextra\Core\Catalog\Catalog;
 use Vextra\Core\Compat\Compat;
 use Vextra\Core\Compat\Conflicts;
 use Vextra\Core\Contracts\ModuleInterface;
@@ -50,6 +51,7 @@ final class Plugin {
 		Security::class,
 		Reviews::class,
 		Performance::class,
+		Catalog::class,
 	];
 
 	/**
