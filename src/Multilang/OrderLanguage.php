@@ -9,6 +9,11 @@
  * Emails: order-bound `*_notification` triggers are wrapped in `switch_to_locale( order locale )` at priority 1 and
  * `restore_previous_locale()` at priority 999, so admin- and cron-initiated mails use the customer language.
  *
+ * Subject + heading (TASK-046): the default texts are re-resolved at send time under the order locale (filters `woocommerce_email_subject_{id}`
+ * / `woocommerce_email_heading_{id}`) unless the owner customised them in WooCommerce > Settings > Emails (a customised string is kept as saved).
+ * Admin e-mails (new / cancelled / failed order) are addressed to the (Ukrainian) store owner: their trigger is re-registered inside a locale
+ * switch to the site default language, so the WHOLE admin mail (subject, heading, body) stays Ukrainian for any order language.
+ *
  * @package Vextra\Core
  */
 
@@ -48,11 +53,40 @@ final class OrderLanguage {
 	];
 
 	/**
+	 * E-mail ids whose default subject / heading are re-resolved under the active locale.
+	 */
+	private const TEXT_EMAIL_IDS = [
+		'customer_processing_order',
+		'customer_completed_order',
+		'customer_on_hold_order',
+		'customer_refunded_order',
+		'customer_partially_refunded_order',
+		'customer_note',
+		'customer_failed_order',
+		'customer_invoice',
+		'new_order',
+		'cancelled_order',
+		'failed_order',
+	];
+
+	/**
+	 * Admin-bound e-mail ids (always in the site default language).
+	 */
+	private const ADMIN_EMAIL_IDS = [ 'new_order', 'cancelled_order', 'failed_order' ];
+
+	/**
 	 * Polylang adapter.
 	 *
 	 * @var Polylang
 	 */
 	private Polylang $polylang;
+
+	/**
+	 * Admin triggers already wrapped (`hook|email id`).
+	 *
+	 * @var bool[]
+	 */
+	private array $wrapped = [];
 
 	/**
 	 * Whether a locale switch is open per nested notification.
@@ -69,6 +103,10 @@ final class OrderLanguage {
 		add_action( 'woocommerce_checkout_create_order', [ $this, 'store' ] );
 		add_action( 'woocommerce_store_api_checkout_update_order_meta', [ $this, 'store' ] );
 
+		foreach ( self::TEXT_EMAIL_IDS as $id ) {
+			add_filter( 'woocommerce_email_subject_' . $id, [ $this, 'email_subject' ], 10, 3 );
+			add_filter( 'woocommerce_email_heading_' . $id, [ $this, 'email_heading' ], 10, 3 );
+		}
 		foreach ( self::EMAIL_HOOKS as $hook ) {
 			add_action( $hook, [ $this, 'switch_locale' ], 1 );
 			add_action( $hook, [ $this, 'restore_locale' ], 999 );
@@ -96,12 +134,97 @@ final class OrderLanguage {
 	 * @param mixed $payload Order ID, or the args array of the customer-note hook.
 	 */
 	public function switch_locale( $payload = null ): void {
+		$this->wrap_admin_triggers( (string) current_filter() );
 		$opened = false;
 		$locale = $this->locale_for( $payload );
 		if ( '' !== $locale && get_locale() !== $locale ) {
 			$opened = (bool) switch_to_locale( $locale );
 		}
 		$this->switched[] = $opened;
+	}
+
+	/**
+	 * Subject: the Woo default re-resolved in the active locale (a customised subject is kept).
+	 *
+	 * @param mixed $subject Formatted subject.
+	 * @param mixed $order_or_object Order / object (unused).
+	 * @param mixed $email   WC_Email.
+	 * @return mixed
+	 */
+	public function email_subject( $subject, $order_or_object = null, $email = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		if ( $email instanceof \WC_Email && ! $this->is_customised( $email, 'subject' ) ) {
+			return $email->format_string( $email->get_default_subject() );
+		}
+		return $subject;
+	}
+
+	/**
+	 * Heading: the Woo default re-resolved in the active locale (a customised heading is kept).
+	 *
+	 * @param mixed $heading Formatted heading.
+	 * @param mixed $order_or_object Order / object (unused).
+	 * @param mixed $email   WC_Email.
+	 * @return mixed
+	 */
+	public function email_heading( $heading, $order_or_object = null, $email = null ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		if ( $email instanceof \WC_Email && ! $this->is_customised( $email, 'heading' ) ) {
+			return $email->format_string( $email->get_default_heading() );
+		}
+		return $heading;
+	}
+
+	/**
+	 * Whether the store owner saved their own text for a field. The email object's `get_option()` is not usable for this: it falls back to a
+	 * default string translated when the form fields were first built (in whatever language that was), so the stored option is read directly.
+	 *
+	 * @param \WC_Email $email E-mail.
+	 * @param string    $field Field key (`subject` / `heading`).
+	 */
+	private function is_customised( \WC_Email $email, string $field ): bool {
+		$saved = get_option( $email->get_option_key(), [] );
+		return is_array( $saved ) && isset( $saved[ $field ] ) && '' !== trim( (string) $saved[ $field ] );
+	}
+
+	/**
+	 * Re-register the triggers of the admin e-mails of this notification hook inside a switch to the site default locale.
+	 * Runs at priority 1 of the hook (WooCommerce has instantiated its mailer by then); idempotent per hook + e-mail.
+	 *
+	 * @param string $hook Current notification hook.
+	 */
+	private function wrap_admin_triggers( string $hook ): void {
+		if ( '' === $hook || ! function_exists( 'WC' ) || ! WC() || ! method_exists( WC(), 'mailer' ) ) {
+			return;
+		}
+		$default = $this->polylang->locale_of( $this->polylang->default_language() );
+		if ( '' === $default ) {
+			return;
+		}
+		foreach ( (array) WC()->mailer()->get_emails() as $email ) {
+			if ( ! $email instanceof \WC_Email || ! in_array( $email->id, self::ADMIN_EMAIL_IDS, true ) || isset( $this->wrapped[ $hook . '|' . $email->id ] ) ) {
+				continue;
+			}
+			$priority = has_action( $hook, [ $email, 'trigger' ] );
+			if ( false === $priority ) {
+				continue;
+			}
+			$this->wrapped[ $hook . '|' . $email->id ] = true;
+			remove_action( $hook, [ $email, 'trigger' ], $priority );
+			add_action(
+				$hook,
+				static function () use ( $email, $default ): void {
+					$opened = get_locale() !== $default && (bool) switch_to_locale( $default );
+					try {
+						$email->trigger( ...func_get_args() );
+					} finally {
+						if ( $opened ) {
+							restore_previous_locale();
+						}
+					}
+				},
+				(int) $priority,
+				3
+			);
+		}
 	}
 
 	public function restore_locale(): void {

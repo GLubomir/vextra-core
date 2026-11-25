@@ -43,6 +43,7 @@ final class Markers {
 			'hreflang'  => $indexable && $assert_index && $languages > 1 ? $languages + 1 : null,
 			'jsonld'    => $jsonld,
 			'lang'      => $lang_attr,
+			'hero'      => 'home' === $page,
 		];
 	}
 
@@ -69,6 +70,9 @@ final class Markers {
 		}
 		if ( isset( $expect['h1'] ) && (int) preg_match_all( '/<h1[\s>]/i', $html ) !== (int) $expect['h1'] ) {
 			$fail[] = 'h1-count';
+		}
+		if ( ! empty( $expect['hero'] ) && 1 !== preg_match( '/class=["\'][^"\']*(?<![\w-])vx-hero-sec(?![\w-])/i', $html ) ) {
+			$fail[] = 'no-hero';
 		}
 		if ( isset( $expect['canonical'] ) ) {
 			$count = (int) preg_match_all( '/<link\b[^>]*\brel=["\']canonical["\']/i', $html );
