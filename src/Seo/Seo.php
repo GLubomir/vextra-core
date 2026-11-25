@@ -55,7 +55,17 @@ final class Seo implements ModuleInterface {
 		$counts = new TermCounts( $rank );
 		$counts->register();
 
-		( new Robots( $rank, $counts ) )->register();
+		// Public slug helper for the theme (heading anchors of the document pages, TASK-047a): `apply_filters( 'vextra/core/seo/slugify', '', $text, $lang, $max )`.
+		add_filter(
+			'vextra/core/seo/slugify',
+			static fn( $slug, $text = '', $lang = 'uk', $max = 60 ): string => ( new Transliterator() )->transliterate( (string) $text, 'ru' === $lang ? 'ru' : 'uk', max( 10, (int) $max ) ),
+			10,
+			4
+		);
+
+		$launch = new LaunchPages( $pll );
+		( new Robots( $rank, $counts, $launch ) )->register();
+		$rank->exclude_posts_from_sitemap( [ $launch, 'sitemap_excluded' ] );
 		( new Sitemap( $rank, $counts, $pll ) )->register();
 
 		$templates = new Templates( $pll, $rank );
@@ -70,7 +80,7 @@ final class Seo implements ModuleInterface {
 		( new SaleProducts() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
-			( new Cli( $pll, $rank, $counts, new Transliterator() ) )->register();
+			( new Cli( $pll, $rank, $counts, new Transliterator(), $launch ) )->register();
 			( new CatalogCli( $pll ) )->register();
 		}
 	}

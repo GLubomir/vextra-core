@@ -45,7 +45,15 @@ final class Cli {
 	 */
 	private Transliterator $translit;
 
-	public function __construct( Polylang $polylang, RankMath $rank_math, TermCounts $counts, Transliterator $translit ) {
+	/**
+	 * Index gate.
+	 *
+	 * @var LaunchPages
+	 */
+	private LaunchPages $launch;
+
+	public function __construct( Polylang $polylang, RankMath $rank_math, TermCounts $counts, Transliterator $translit, LaunchPages $launch ) {
+		$this->launch    = $launch;
 		$this->polylang  = $polylang;
 		$this->rank_math = $rank_math;
 		$this->counts    = $counts;
@@ -121,6 +129,38 @@ final class Cli {
 						'optional' => true,
 					],
 				],
+			]
+		);
+		\WP_CLI::add_command(
+			'vextra seo launch-pages',
+			[ $this, 'launch_pages' ],
+			[
+				'shortdesc' => 'Index gate of the info pages: a UA + RU pair is set to index only when BOTH twins have enough real text and no owner placeholder; a failing pair is refused entirely (exit 1).',
+				'synopsis'  => [
+					[
+						'type'      => 'positional',
+						'name'      => 'page',
+						'optional'  => true,
+						'repeating' => true,
+					],
+					[
+						'type'     => 'flag',
+						'name'     => 'dry-run',
+						'optional' => true,
+					],
+					[
+						'type'     => 'assoc',
+						'name'     => 'only',
+						'optional' => true,
+					],
+				],
+			]
+		);
+		\WP_CLI::add_command(
+			'vextra seo audit-pages',
+			[ $this, 'audit_pages' ],
+			[
+				'shortdesc' => 'Read-only: launch pages that are indexable with placeholder content, noindex with real content, or have no twin.',
 			]
 		);
 	}
@@ -275,5 +315,163 @@ final class Cli {
 		wc_recount_all_terms();
 		$this->counts->invalidate();
 		\WP_CLI::success( 'WooCommerce term counts recalculated, SEO count cache dropped.' );
+	}
+
+	/**
+	 * Command: launch-pages. Index gate: UA + RU twins are evaluated together; a pair is flipped to index only when BOTH pass.
+	 *
+	 * @param array<int,string>    $args  Slugs or ids (empty = all launch pages).
+	 * @param array<string,string> $assoc `dry-run`, `only`.
+	 */
+	public function launch_pages( array $args, array $assoc ): void {
+		$dry   = isset( $assoc['dry-run'] );
+		$slugs = $this->launch->slugs();
+		$want  = [];
+		foreach ( $args as $arg ) {
+			$arg = (string) $arg;
+			if ( ctype_digit( $arg ) ) {
+				$slug = $this->launch->launch_slug( (int) $arg );
+				if ( '' === $slug ) {
+					\WP_CLI::error( sprintf( 'Page %d is not a launch page (refused). Launch pages: %s.', (int) $arg, implode( ', ', $slugs ) ) );
+				}
+				$want[] = $slug;
+			} else {
+				if ( ! in_array( $arg, $slugs, true ) ) {
+					\WP_CLI::error( sprintf( '"%s" is not a launch page (refused). Launch pages: %s.', $arg, implode( ', ', $slugs ) ) );
+				}
+				$want[] = $arg;
+			}
+		}
+		if ( isset( $assoc['only'] ) ) {
+			foreach ( array_filter( array_map( 'trim', explode( ',', (string) $assoc['only'] ) ) ) as $arg ) {
+				if ( ! in_array( $arg, $slugs, true ) ) {
+					\WP_CLI::error( sprintf( '"%s" is not a launch page (refused).', $arg ) );
+				}
+				$want[] = $arg;
+			}
+		}
+		$want = array() === $want ? $slugs : array_values( array_unique( $want ) );
+
+		$rows    = [];
+		$refused = 0;
+		$flipped = 0;
+		$langs   = $this->polylang->languages();
+		foreach ( $want as $slug ) {
+			$group   = $this->launch->pair( $slug );
+			$verdict = [];
+			$missing = [];
+			foreach ( $langs as $lang ) {
+				if ( empty( $group[ $lang ] ) ) {
+					$missing[] = (string) $lang;
+					continue;
+				}
+				$verdict[ $lang ] = $this->launch->inspect( (int) $group[ $lang ] );
+			}
+			$pair_ok = array() === $missing && array() !== $verdict;
+			foreach ( $verdict as $v ) {
+				$pair_ok = $pair_ok && $v['ok'];
+			}
+
+			$was_noindex = [];
+			foreach ( $group as $gid ) {
+				$was_noindex[ (int) $gid ] = $this->rank_math->is_post_noindex( (int) $gid );
+			}
+			$changed = false;
+			if ( $pair_ok && ! $dry ) {
+				foreach ( $group as $id ) {
+					$this->rank_math->clear_post_noindex( (int) $id );
+					// A page with approved real text is no longer seeded demo content: the sitemap excludes `_vx_demo` pages (Seo\Sitemap).
+					delete_post_meta( (int) $id, '_vx_demo' );
+				}
+				$changed = true;
+				++$flipped;
+			}
+			if ( ! $pair_ok ) {
+				++$refused;
+			}
+
+			foreach ( $verdict as $lang => $v ) {
+				$id     = (int) $group[ $lang ];
+				$rows[] = [
+					'slug'        => $slug,
+					'lang'        => $lang,
+					'id'          => $id,
+					'chars'       => $v['chars'],
+					'placeholder' => 'placeholder' === $v['reason'] ? 'yes' : 'no',
+					'robots'      => $was_noindex[ $id ] ? 'noindex' : 'index',
+					'result'      => $pair_ok ? ( $dry ? 'would flip' : 'flipped' ) : 'REFUSED (' . ( '' !== $v['reason'] ? $v['reason'] . ( '' !== $v['snippet'] ? ': ' . $v['snippet'] : '' ) : 'twin: ' . ( array() !== $missing ? 'missing' : 'other twin failed' ) ) . ')',
+				];
+			}
+			foreach ( $missing as $lang ) {
+				$rows[] = [
+					'slug'        => $slug,
+					'lang'        => $lang,
+					'id'          => 0,
+					'chars'       => 0,
+					'placeholder' => 'no',
+					'robots'      => '-',
+					'result'      => 'REFUSED (twin missing)',
+				];
+			}
+		}
+
+		\WP_CLI\Utils\format_items( 'table', $rows, [ 'slug', 'lang', 'id', 'chars', 'placeholder', 'robots', 'result' ] );
+		if ( $flipped > 0 ) {
+			$this->rank_math->invalidate_sitemap( 'page' );
+		}
+		\WP_CLI::log( sprintf( '%d pair(s) %s, %d refused%s.', $flipped, $dry ? 'checked (dry-run, nothing written)' : 'set to index', $refused, $flipped > 0 ? '; page sitemap cache dropped' : '' ) );
+		if ( $refused > 0 ) {
+			\WP_CLI::halt( 1 );
+		}
+	}
+
+	/**
+	 * Command: audit-pages (read-only): indexable pages with placeholder content, noindex pages with real content.
+	 *
+	 * @param array<int,string>    $args  Unused.
+	 * @param array<string,string> $assoc Unused.
+	 */
+	public function audit_pages( array $args, array $assoc ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter
+		$rows = [];
+		foreach ( $this->launch->slugs() as $slug ) {
+			$group = $this->launch->pair( $slug );
+			foreach ( $this->polylang->languages() as $lang ) {
+				if ( empty( $group[ $lang ] ) ) {
+					$rows[] = [
+						'slug'    => $slug,
+						'lang'    => $lang,
+						'id'      => 0,
+						'chars'   => 0,
+						'noindex' => '-',
+						'finding' => 'twin missing (pair cannot be flipped; no hreflang)',
+					];
+					continue;
+				}
+				$id      = (int) $group[ $lang ];
+				$v       = $this->launch->inspect( $id );
+				$noindex = $this->rank_math->is_post_noindex( $id );
+				$finding = '';
+				if ( ! $noindex && ! $v['ok'] ) {
+					$finding = 'indexable by meta but ' . $v['reason'] . ' (the robots guard serves noindex)';
+				} elseif ( $noindex && $v['ok'] ) {
+					$finding = 'noindex with real content (ready for launch-pages)';
+				}
+				if ( '' !== $finding ) {
+					$rows[] = [
+						'slug'    => $slug,
+						'lang'    => $lang,
+						'id'      => $id,
+						'chars'   => $v['chars'],
+						'noindex' => $noindex ? 'yes' : 'no',
+						'finding' => $finding,
+					];
+				}
+			}
+		}
+		if ( array() === $rows ) {
+			\WP_CLI::success( 'No mismatches: every launch page is noindex with placeholder content or indexable with real content.' );
+			return;
+		}
+		\WP_CLI\Utils\format_items( 'table', $rows, [ 'slug', 'lang', 'id', 'chars', 'noindex', 'finding' ] );
 	}
 }

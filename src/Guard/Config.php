@@ -46,6 +46,10 @@ final class Config {
 		'checkout_window'       => 600,
 		'checkout_email_limit'  => 3,    // Checkout POST attempts per billing e-mail (hashed), counted after the Turnstile check.
 		'checkout_email_window' => 3600,
+		'track_limit'           => 10,   // Order-tracking lookups per client IP (TASK-047a).
+		'track_window'          => 600,
+		'track_order_limit'     => 10,   // Lookups per order number (hashed), across all IPs: no distributed brute force of one id.
+		'track_order_window'    => 3600,
 	];
 
 	/**
