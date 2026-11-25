@@ -14,6 +14,7 @@ namespace Vextra\Core;
 
 use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Vextra\Core\Admin\Notices;
+use Vextra\Core\Brand\Brand;
 use Vextra\Core\Cart\Module as Cart;
 use Vextra\Core\Catalog\Catalog;
 use Vextra\Core\Checkout\Module as Checkout;
@@ -65,6 +66,7 @@ final class Plugin {
 		Cart::class,
 		Checkout::class,
 		Orders::class,
+		Brand::class,
 	];
 
 	/**

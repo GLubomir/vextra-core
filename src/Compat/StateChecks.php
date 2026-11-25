@@ -299,6 +299,12 @@ final class StateChecks {
 				'fields'                 => 'ids',
 				'no_found_rows'          => true,
 				'update_post_term_cache' => false,
+				'meta_query'             => [ // phpcs:ignore WordPress.DB.SlowDBQuery -- brand attachments (TASK-049a) have no sub-sizes by design.
+					[
+						'key'     => '_vx_brand_key',
+						'compare' => 'NOT EXISTS',
+					],
+				],
 			]
 		);
 		if ( array() === $ids ) {
