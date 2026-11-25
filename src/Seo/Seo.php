@@ -63,7 +63,7 @@ final class Seo implements ModuleInterface {
 			4
 		);
 
-		$launch = new LaunchPages( $pll );
+		$launch = LaunchPages::shared( $pll );
 		( new Robots( $rank, $counts, $launch ) )->register();
 		$rank->exclude_posts_from_sitemap( [ $launch, 'sitemap_excluded' ] );
 		( new Sitemap( $rank, $counts, $pll ) )->register();

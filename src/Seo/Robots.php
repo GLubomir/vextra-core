@@ -106,12 +106,8 @@ final class Robots {
 		}
 		$force = false;
 		try {
-			$id = (int) get_queried_object_id();
-			if ( $this->launch->is_track_page( $id ) ) {
-				$force = true;
-			} elseif ( '' !== $this->launch->launch_slug( $id ) ) {
-				$force = ! $this->launch->inspect( $id )['ok'];
-			}
+			$id    = (int) get_queried_object_id();
+			$force = ! $this->launch->is_indexable( $id, $this->rank_math );
 		} catch ( \Throwable $e ) {
 			$this->warn( $e );
 			$force = true;

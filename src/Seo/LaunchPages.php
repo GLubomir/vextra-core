@@ -15,6 +15,7 @@ declare(strict_types=1);
 namespace Vextra\Core\Seo;
 
 use Vextra\Core\Integrations\Polylang\Polylang;
+use Vextra\Core\Integrations\RankMath\RankMath;
 
 final class LaunchPages {
 
@@ -66,8 +67,46 @@ final class LaunchPages {
 	 */
 	private ?array $track_ids = null;
 
+	/**
+	 * Shared instance per Polylang adapter (one memo for Robots, Hreflang, Sitemap).
+	 *
+	 * @var LaunchPages|null
+	 */
+	private static ?LaunchPages $shared = null;
+
 	public function __construct( Polylang $polylang ) {
 		$this->polylang = $polylang;
+	}
+
+	/**
+	 * The shared instance.
+	 *
+	 * @param Polylang $polylang Adapter.
+	 */
+	public static function shared( Polylang $polylang ): self {
+		if ( null === self::$shared ) {
+			self::$shared = new self( $polylang );
+		}
+		return self::$shared;
+	}
+
+	/**
+	 * THE indexability decision of a page (Robots guard, hreflang, sitemap, CLI use it): false when Rank Math says noindex, the page is the
+	 * order-tracking page, or it is a launch page failing the gate. Fails CLOSED (an error = not indexable).
+	 *
+	 * @param int      $post_id   Page / post id.
+	 * @param RankMath $rank_math Adapter.
+	 */
+	public function is_indexable( int $post_id, RankMath $rank_math ): bool {
+		try {
+			if ( $post_id <= 0 || $rank_math->is_post_noindex( $post_id ) || $this->is_track_page( $post_id ) ) {
+				return false;
+			}
+			return '' === $this->launch_slug( $post_id ) || $this->inspect( $post_id )['ok'];
+		} catch ( \Throwable $e ) {
+			unset( $e );
+			return false;
+		}
 	}
 
 	/**
