@@ -38,8 +38,8 @@ final class CheckoutThrottle {
 	 * @return array{allowed:bool,retry_after:int,remaining:int}
 	 */
 	public static function hit_email( string $email ): array {
-		$email = strtolower( trim( sanitize_email( $email ) ) );
-		if ( '' === $email || ! is_email( $email ) ) {
+		$email = self::normalise_email( $email );
+		if ( '' === $email ) {
 			return [
 				'allowed'     => true,
 				'retry_after' => 0,
@@ -47,6 +47,33 @@ final class CheckoutThrottle {
 			];
 		}
 		return RateLimiter::hit( 'checkout_mail', hash_hmac( 'sha256', $email, wp_salt( 'auth' ) ), Config::get( 'checkout_email_limit' ), Config::get( 'checkout_email_window' ) );
+	}
+
+	/**
+	 * Mailbox key of an address (SEC-074): lower case, `+tag` removed, dots removed for Gmail (`googlemail.com` = `gmail.com`), so aliases of one inbox share one
+	 * bucket. '' for a malformed address. Used for the e-mail bucket and the order lock; never stored or logged.
+	 *
+	 * @param string $email Raw billing e-mail.
+	 */
+	public static function normalise_email( string $email ): string {
+		$email = strtolower( trim( sanitize_email( $email ) ) );
+		if ( '' === $email || ! is_email( $email ) ) {
+			return '';
+		}
+		$at     = (int) strrpos( $email, '@' );
+		$local  = substr( $email, 0, $at );
+		$domain = substr( $email, $at + 1 );
+		$plus   = strpos( $local, '+' );
+		if ( false !== $plus && $plus > 0 ) {
+			$local = substr( $local, 0, $plus );
+		}
+		if ( 'googlemail.com' === $domain ) {
+			$domain = 'gmail.com';
+		}
+		if ( 'gmail.com' === $domain ) {
+			$local = str_replace( '.', '', $local );
+		}
+		return $local . '@' . $domain;
 	}
 
 	/**

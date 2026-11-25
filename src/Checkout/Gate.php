@@ -24,8 +24,13 @@ use Vextra\Core\Guard\Exempt;
 use Vextra\Core\Guard\Failsafe;
 use Vextra\Core\Guard\Responder;
 use Vextra\Core\Guard\StoreApi;
+use Vextra\Core\Integrations\WooCommerce\WooCommerce;
+use Vextra\Core\Plugin;
 
 final class Gate {
+
+	private const BATCH     = '#^/wc/store(?:/v\d+)?/batch/?$#i';
+	private const MAX_FIELD = 255;
 
 	/**
 	 * Turnstile helper (null when the adapter has no keys).
@@ -68,7 +73,15 @@ final class Gate {
 	 */
 	public function pre_dispatch( $result, $server = null, $request = null ) {
 		unset( $server );
-		if ( null !== $result || ! $request instanceof \WP_REST_Request || 1 !== preg_match( StoreApi::CHECKOUT, strtolower( (string) $request->get_route() ) ) ) {
+		if ( null !== $result || ! $request instanceof \WP_REST_Request ) {
+			return $result;
+		}
+		$route = strtolower( (string) $request->get_route() );
+		if ( 1 === preg_match( self::BATCH, $route ) && 'POST' === strtoupper( $request->get_method() ) && $this->batch_has_checkout( $request ) ) {
+			// SEC-073: one Turnstile token authorises exactly one checkout; a batch would run several under one verdict. Place-order is never a batch sub-request.
+			return $this->bad_request( 'vx_checkout_not_batchable' );
+		}
+		if ( 1 !== preg_match( StoreApi::CHECKOUT, $route ) ) {
 			return $result;
 		}
 		// A REST request has no Polylang context: every message of the checkout answer (Woo's and ours) is rendered in the language of the page it came from.
@@ -105,24 +118,38 @@ final class Gate {
 	 * @return \WP_REST_Response|null
 	 */
 	private function check( \WP_REST_Request $request ) {
-		if ( ! $this->lock() ) {
-			// A second place-order request of the same shopper while the first one is still running: refuse it (never two orders).
-			$busy = rest_convert_error_to_response( new \WP_Error( 'vx_checkout_busy', __( 'Замовлення вже оформлюється. Зачекайте кілька секунд.', 'vextra-core' ), [ 'status' => 409 ] ) );
-			$busy->header( 'Cache-Control', 'no-store' );
-			return $busy;
+		// 1. Shape of the payload first (SEC-075): nothing is verified, locked or counted for a request Woo would crash on.
+		$bad = $this->invalid_payload( $request );
+		if ( null !== $bad ) {
+			return $bad;
 		}
+		// Account creation at checkout is off (SEC-071): the body cannot switch it on (it is also the "e-mail already registered" oracle).
+		if ( 'yes' !== (string) get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' ) ) {
+			$request->set_param( 'create_account', false );
+		}
+		// 2. Turnstile: one token, one checkout.
 		if ( null !== $this->turnstile ) {
 			$refused = $this->turnstile->check_request( $request );
 			if ( null !== $refused ) {
 				return $refused;
 			}
 		}
+		$billing = $request->get_param( 'billing_address' );
+		$email   = is_array( $billing ) && isset( $billing['email'] ) && is_string( $billing['email'] ) ? $billing['email'] : '';
+		// 3. One place-order at a time per (client key, mailbox) (SEC-072): server-derived key, taken only after the token passed.
+		if ( ! $this->lock( $email ) ) {
+			$busy = rest_convert_error_to_response( new \WP_Error( 'vx_checkout_busy', __( 'Замовлення вже оформлюється. Зачекайте кілька секунд.', 'vextra-core' ), [ 'status' => 409 ] ) );
+			$busy->header( 'Cache-Control', 'no-store' );
+			return $busy;
+		}
 		if ( ! Config::enabled() || Exempt::is_exempt() ) {
 			return null;
 		}
-		$billing = $request->get_param( 'billing_address' );
-		$email   = is_array( $billing ) && isset( $billing['email'] ) && is_string( $billing['email'] ) ? $billing['email'] : '';
-		$hit     = CheckoutThrottle::hit_email( $email );
+		// 4. E-mail bucket (SEC-074): only for a request that can reach order creation (non-empty cart), keyed on the normalised mailbox.
+		if ( $this->cart_is_empty() ) {
+			return null;
+		}
+		$hit = CheckoutThrottle::hit_email( $email );
 		if ( $hit['allowed'] ) {
 			return null;
 		}
@@ -134,23 +161,102 @@ final class Gate {
 	}
 
 	/**
-	 * One place-order request per shopper at a time: a MySQL named lock (atomic, released when the request ends or in `rest_post_dispatch`).
-	 * Key = the Woo session id (cookie value up to the first `||`), else the client IP. Fail open: no database lock available = allowed.
+	 * The cart of this session holds nothing (Woo answers 409 `cart_empty`). The session is loaded here, never created.
 	 */
-	private function lock(): bool {
-		global $wpdb;
-		if ( null !== $this->lock_name ) {
-			return true; // A batch with two checkout sub-requests shares one lock: the second sub-request is refused by Woo's own cart checks.
+	private function cart_is_empty(): bool {
+		$woo = Plugin::instance()->integration( 'woocommerce' );
+		if ( $woo instanceof WooCommerce ) {
+			$woo->load_cart();
 		}
-		$who = '';
-		foreach ( (array) $_COOKIE as $cookie_name => $cookie_value ) {
-			if ( is_string( $cookie_name ) && str_starts_with( $cookie_name, 'wp_woocommerce_session_' ) && is_string( $cookie_value ) ) {
-				$who = (string) strtok( sanitize_text_field( wp_unslash( $cookie_value ) ), '|' );
-				break;
+		return ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart || WC()->cart->is_empty();
+	}
+
+	/**
+	 * SEC-075: billing / shipping address values must be scalar strings with a length cap, `customer_note` / `payment_method` strings: otherwise a
+	 * generic 400 BEFORE the token is verified or Woo validates (an array e-mail made `is_email()` fatal inside Woo).
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|null
+	 */
+	private function invalid_payload( \WP_REST_Request $request ) {
+		foreach ( [ 'billing_address', 'shipping_address' ] as $key ) {
+			$address = $request->get_param( $key );
+			if ( null === $address ) {
+				continue;
+			}
+			if ( ! is_array( $address ) ) {
+				return $this->bad_request( 'vx_bad_request' );
+			}
+			foreach ( $address as $field => $value ) {
+				if ( ! is_string( $field ) || strlen( $field ) > 64 || ! is_string( $value ) || strlen( $value ) > self::MAX_FIELD ) {
+					return $this->bad_request( 'vx_bad_request' );
+				}
 			}
 		}
-		$who  = '' !== $who ? $who : ClientIp::get();
-		$name = 'vx_co_' . substr( md5( $wpdb->prefix . '|' . $who ), 0, 24 );
+		foreach ( [
+			'customer_note'  => 4000,
+			'payment_method' => 100,
+		] as $key => $max ) {
+			$value = $request->get_param( $key );
+			if ( null !== $value && ( ! is_string( $value ) || strlen( $value ) > $max ) ) {
+				return $this->bad_request( 'vx_bad_request' );
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Does a `/batch` body carry a checkout sub-request?
+	 *
+	 * @param \WP_REST_Request $request Batch request.
+	 */
+	private function batch_has_checkout( \WP_REST_Request $request ): bool {
+		$requests = $request->get_param( 'requests' );
+		if ( ! is_array( $requests ) ) {
+			return false;
+		}
+		foreach ( $requests as $sub ) {
+			$path = is_array( $sub ) && isset( $sub['path'] ) && is_string( $sub['path'] ) ? strtolower( (string) wp_parse_url( $sub['path'], PHP_URL_PATH ) ) : '';
+			if ( '' !== $path && 1 === preg_match( StoreApi::CHECKOUT, rtrim( $path, '/' ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Generic 400.
+	 *
+	 * @param string $code Machine code.
+	 */
+	private function bad_request( string $code ): \WP_REST_Response {
+		$response = rest_convert_error_to_response( new \WP_Error( $code, __( 'Перевірте введені дані й спробуйте ще раз.', 'vextra-core' ), [ 'status' => 400 ] ) );
+		$response->header( 'Cache-Control', 'no-store' );
+		return $response;
+	}
+
+	/**
+	 * Name of the order lock: server-derived client key (IP, IPv6 per /64) + normalised mailbox (SEC-072). Nothing the client sends decides it.
+	 *
+	 * @param string $email Raw billing e-mail.
+	 */
+	public static function lock_name( string $email ): string {
+		global $wpdb;
+		return 'vx_co_' . substr( md5( $wpdb->prefix . '|' . ClientIp::get() . '|' . CheckoutThrottle::normalise_email( $email ) ), 0, 24 );
+	}
+
+	/**
+	 * One place-order request per (client key, mailbox) at a time: a MySQL named lock (atomic, released when the request ends or in `rest_post_dispatch`).
+	 * Fail open: no database lock available = allowed.
+	 *
+	 * @param string $email Raw billing e-mail.
+	 */
+	private function lock( string $email ): bool {
+		global $wpdb;
+		if ( null !== $this->lock_name ) {
+			return true;
+		}
+		$name = self::lock_name( $email );
 		$got  = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, 0 )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- named lock, no table.
 		if ( null === $got || '' === (string) $got ) {
 			return true;

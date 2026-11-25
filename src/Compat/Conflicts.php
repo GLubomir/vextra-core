@@ -318,6 +318,16 @@ final class Conflicts {
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
+				'id'       => 'checkout-signup-enabled',
+				'title'    => static fn(): string => __( 'Реєстрація акаунта під час оформлення замовлення увімкнена (SEC-071)', 'vextra-core' ),
+				'module'   => 'checkout',
+				'detector' => fn() => $this->detect_checkout_signup(),
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Створення акаунта на оформленні розкриває, чи є e-mail у базі (помилка «e-mail уже зареєстровано»). Виконайте `wp vextra cart apply-config` (WooCommerce → Налаштування → Облікові записи: вимкнути «Дозволити створення акаунта на сторінці оформлення» і на сторінці «Замовлення отримано»).', 'vextra-core' ),
+				'scope'    => self::SCOPE_SETTINGS,
+			],
+			[
 				'id'       => 'duplicate-reviews-plugin',
 				'title'    => static fn(): string => __( 'Активний плагін відгуків / коментарів поряд із політикою відгуків vextra-core', 'vextra-core' ),
 				'module'   => 'reviews',
@@ -511,6 +521,25 @@ final class Conflicts {
 			$text = $text();
 		}
 		return is_scalar( $text ) ? (string) $text : '';
+	}
+
+	/**
+	 * SEC-071: Woo lets a guest create an account at checkout or on the thank-you page (the "e-mail already registered" answer is an enumeration oracle).
+	 *
+	 * @return string|false The option names that are on, or false.
+	 */
+	private function detect_checkout_signup() {
+		$on = [];
+		// Woo's own defaults when the option row is absent: sign-up at checkout no, account offer on the thank-you page YES.
+		foreach ( [
+			'woocommerce_enable_signup_and_login_from_checkout' => 'no',
+			'woocommerce_enable_delayed_account_creation' => 'yes',
+		] as $name => $default ) {
+			if ( 'yes' === (string) get_option( $name, $default ) ) {
+				$on[] = $name;
+			}
+		}
+		return array() === $on ? false : implode( ', ', $on );
 	}
 
 	/**

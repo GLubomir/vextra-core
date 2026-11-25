@@ -21,8 +21,10 @@ if ( 'local' !== wp_get_environment_type() ) {
 }
 
 use Vextra\Core\Cart\ResourceHints;
+use Vextra\Core\Checkout\Gate;
 use Vextra\Core\Checkout\Phone;
 use Vextra\Core\Checkout\Privacy;
+use Vextra\Core\Checkout\TurnstileCheckout;
 use Vextra\Core\Compat\Conflicts;
 use Vextra\Core\Guard\CheckoutThrottle;
 use Vextra\Core\Guard\ClientIp;
@@ -353,6 +355,120 @@ if ( $var_child > 0 ) {
 	WP_CLI::warning( 'demo-pdp-variable (synii / 256-gb) not found: variation-name check skipped.' );
 }
 
+// --- Fix round 5 over HTTP: no account oracle (SEC-071), Referrer-Policy on the order pages (SEC-077). COD is enabled temporarily and restored; every test row is removed. ---
+$had_cod    = get_option( 'woocommerce_cod_settings', null );
+$p_before   = wc_get_product( $product );
+$stock_was  = $p_before->get_stock_quantity();
+$sales_was  = $p_before->get_total_sales();
+update_option( 'woocommerce_cod_settings', [ 'enabled' => 'yes' ] );
+require_once ABSPATH . 'wp-admin/includes/user.php';
+$exists_mail = 't045a-exists@example.test';
+$user_id     = wp_insert_user(
+	[
+		'user_login' => 't045a-exists',
+		'user_pass'  => wp_generate_password( 24 ),
+		'user_email' => $exists_mail,
+		'role'       => 'customer',
+	]
+);
+$users_before = count_users()['total_users'];
+foreach ( [ $exists_mail, 't045a-new@example.test' ] as $buyer_mail ) {
+	RateLimiter::reset( 'checkout', '127.0.0.1' );
+	RateLimiter::reset( 'checkout', '::1' );
+	$c   = [];
+	$r   = $http( 'GET', '/wp-json/wc/store/v1/cart' );
+	$n   = (string) wp_remote_retrieve_header( [ 'headers' => $r['headers'] ], 'nonce' );
+	$c   = $jar( $r, $c );
+	$r   = $http(
+		'POST',
+		'/wp-json/wc/store/v1/cart/add-item',
+		[
+			'headers' => [
+				'Nonce'        => $n,
+				'Content-Type' => 'application/json',
+			],
+			'body'    => wp_json_encode(
+				[
+					'id'       => $product,
+					'quantity' => 1,
+				]
+			),
+		],
+		$c
+	);
+	$c   = $jar( $r, $c );
+	$n   = (string) wp_remote_retrieve_header( [ 'headers' => $r['headers'] ], 'nonce' );
+	$adr = [
+		'first_name' => 'Test',
+		'last_name'  => 'T',
+		'address_1'  => 'Testova 1',
+		'city'       => 'Kyiv',
+		'state'      => 'UA30',
+		'postcode'   => '',
+		'country'    => 'UA',
+		'phone'      => '0501234567',
+	];
+	$r   = $http(
+		'POST',
+		'/wp-json/wc/store/v1/checkout',
+		[
+			'headers' => [
+				'Nonce'        => $n,
+				'Content-Type' => 'application/json',
+			],
+			'body'    => wp_json_encode(
+				[
+					'billing_address'  => $adr + [ 'email' => $buyer_mail ],
+					'shipping_address' => $adr,
+					'payment_method'   => 'cod',
+					'create_account'   => true,
+				]
+			),
+		],
+		$c
+	);
+	$d   = json_decode( $r['body'], true );
+	$oid = (int) ( $d['order_id'] ?? 0 );
+	if ( $oid > 0 ) {
+		$temp_orders[] = $oid;
+	}
+	$ok( 200 === $r['code'] && $oid > 0 && 0 === (int) ( $d['customer_id'] ?? -1 ) && false === strpos( $r['body'], 'registration-error' ), 'SEC-071: create_account=true with ' . ( $buyer_mail === $exists_mail ? 'a REGISTERED' : 'a new' ) . ' e-mail -> same answer, guest order, no oracle', $r['code'] . ' ' . substr( $r['body'], 0, 120 ) );
+	if ( $oid > 0 && $buyer_mail === $exists_mail ) {
+		$order = wc_get_order( $oid );
+		$page  = '/checkout/order-received/' . $oid . '/?key=' . $order->get_order_key();
+		$res   = $http( 'GET', $page );
+		$ok( 'strict-origin-when-cross-origin' === (string) wp_remote_retrieve_header( [ 'headers' => $res['headers'] ], 'referrer-policy' ), 'SEC-077: order-received sends Referrer-Policy strict-origin-when-cross-origin' );
+		$pay = '/checkout/order-pay/' . $oid . '/?pay_for_order=true&key=' . $order->get_order_key();
+		$res = $http( 'GET', $pay );
+		$ok( 'strict-origin-when-cross-origin' === (string) wp_remote_retrieve_header( [ 'headers' => $res['headers'] ], 'referrer-policy' ), 'SEC-077: order-pay sends Referrer-Policy' );
+		$res = $http( 'GET', '/cart/' );
+		$ok( '' === (string) wp_remote_retrieve_header( [ 'headers' => $res['headers'] ], 'referrer-policy' ), 'SEC-077: only the order pages carry it' );
+	}
+}
+$ok( count_users()['total_users'] === $users_before, 'SEC-071: no account was created by the two checkouts' );
+foreach ( $temp_orders as $oid ) {
+	$order = wc_get_order( $oid );
+	if ( $order instanceof WC_Order && str_ends_with( (string) $order->get_billing_email(), '@example.test' ) ) {
+		$order->delete( true );
+	}
+}
+$temp_orders = [];
+wp_delete_user( (int) $user_id );
+$p_restore = wc_get_product( $product );
+if ( null !== $stock_was ) {
+	wc_update_product_stock( $p_restore, (int) $stock_was, 'set' );
+}
+$p_restore = wc_get_product( $product );
+$p_restore->set_total_sales( (int) $sales_was );
+$p_restore->save();
+if ( null === $had_cod ) {
+	delete_option( 'woocommerce_cod_settings' );
+} else {
+	update_option( 'woocommerce_cod_settings', $had_cod );
+}
+RateLimiter::reset( 'checkout', '127.0.0.1' );
+	RateLimiter::reset( 'checkout', '::1' );
+
 // The page does not depend on the cookie (cache safety).
 $norm  = static fn( string $html ): string => (string) preg_replace( '#<a href="mailto:[^"]*">[^<]*</a>#', '<MAIL>', $html );
 $plain = $norm( $http( 'GET', '/catalog/' )['body'] );
@@ -414,6 +530,164 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 	$ok( false === $verdict['ok'] && 'hostname' === $verdict['reason'], 'verify: wrong hostname is refused', wp_json_encode( $verdict ) );
 	$verdict = $ts->verify( '', '203.0.113.50', 'checkout' );
 	$ok( false === $verdict['ok'] && 'missing' === $verdict['reason'], 'verify: missing token is refused' );
+	// --- Fix round 5 (SEC-072 .. SEC-075): the Gate, in process, with simulated siteverify answers -----------------------------------------------
+	$calls = 0;
+	add_filter(
+		'pre_http_request',
+		static function ( $pre, $args, $url ) use ( &$calls ) {
+			if ( Turnstile::VERIFY_URL === $url ) {
+				++$calls;
+			}
+			return $pre;
+		},
+		5,
+		3
+	);
+	$answer = [
+		'success'  => true,
+		'action'   => 'checkout',
+		'hostname' => $host,
+	];
+	$gate   = new Gate( new TurnstileCheckout() );
+	$server = rest_get_server();
+	$mk_req = static function ( array $params, string $route = '/wc/store/v1/checkout' ): WP_REST_Request {
+		$req = new WP_REST_Request( 'POST', $route );
+		foreach ( $params as $k => $v ) {
+			$req->set_param( $k, $v );
+		}
+		return $req;
+	};
+	$token  = 0;
+	$fresh  = static function () use ( &$token ): array {
+		++$token;
+		return [
+			'vextra' => [
+				'turnstile' => 't045a-r5-token-' . $token,
+			],
+		];
+	};
+
+	// SEC-075: a non-string e-mail / field -> 400 before the token is verified (token not consumed, no Woo call).
+	$calls = 0;
+	$resp  = $gate->pre_dispatch(
+		null,
+		$server,
+		$mk_req(
+			[
+				'billing_address' => [ 'email' => [ 'a' ] ],
+				'extensions'      => $fresh(),
+			]
+		)
+	);
+	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 0 === $calls, 'SEC-075: array e-mail -> 400, token not verified', $resp instanceof WP_REST_Response ? (string) $resp->get_status() : 'null' );
+	$resp = $gate->pre_dispatch(
+		null,
+		$server,
+		$mk_req(
+			[
+				'billing_address' => [ 'address_1' => str_repeat( 'x', 300 ) ],
+				'extensions'      => $fresh(),
+			]
+		)
+	);
+	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 0 === $calls, 'SEC-075: 300-char field -> 400, token not verified' );
+	$resp = $gate->pre_dispatch( null, $server, $mk_req( [ 'billing_address' => 'x' ] ) );
+	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status(), 'SEC-075: scalar address -> 400' );
+
+	// SEC-073: a batch that carries a checkout is refused; a batch of cart calls is not touched.
+	$resp = $gate->pre_dispatch(
+		null,
+		$server,
+		$mk_req(
+			[
+				'requests' => [
+					[
+						'path'   => '/wc/store/v1/cart/add-item',
+						'method' => 'POST',
+					],
+					[
+						'path'   => '/wc/store/v1/Checkout/?x=1',
+						'method' => 'POST',
+					],
+				],
+			],
+			'/wc/store/v1/batch'
+		)
+	);
+	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 'vx_checkout_not_batchable' === ( $resp->get_data()['code'] ?? '' ), 'SEC-073: checkout inside /batch -> 400' );
+	$resp = $gate->pre_dispatch(
+		null,
+		$server,
+		$mk_req(
+			[
+				'requests' => [
+					[
+						'path'   => '/wc/store/v1/cart/add-item',
+						'method' => 'POST',
+					],
+				],
+			],
+			'/wc/store/v1/batch'
+		)
+	);
+	$ok( null === $resp, 'SEC-073: a batch without checkout passes through' );
+
+	// SEC-074: no e-mail bucket for an empty cart; with a cart the NORMALISED mailbox is counted once.
+	$mailbox = 'ab@gmail.com';
+	$peek    = static fn(): int => (int) RateLimiter::peek( 'checkout_mail', hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) ), 100 )['count'];
+	RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) ) );
+	WC()->cart->empty_cart();
+	$body  = static fn( string $mail ): array => [
+		'billing_address' => [
+			'email'      => $mail,
+			'first_name' => 'T',
+		],
+		'extensions'      => $fresh(),
+	];
+	$resp  = $gate->pre_dispatch( null, $server, $mk_req( $body( 'A.B+one@gmail.com' ) ) );
+	$gate->restore_locale( null );
+	$ok( null === $resp && 0 === $peek(), 'SEC-074: empty cart -> e-mail bucket not counted', 'count ' . $peek() );
+	WC()->cart->add_to_cart( $product );
+	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'a.b+two@googlemail.com' ) ) );
+	$gate->restore_locale( null );
+	$resp2 = $gate->pre_dispatch( null, $server, $mk_req( $body( 'AB@gmail.com' ) ) );
+	$gate->restore_locale( null );
+	$ok( null === $resp && null === $resp2 && 2 === $peek(), 'SEC-074: +tag / dots / googlemail share ONE mailbox bucket', 'count ' . $peek() );
+	$ok( 'ab@gmail.com' === CheckoutThrottle::normalise_email( 'A.B+x@Gmail.com' ) && 'a.b@example.test' === CheckoutThrottle::normalise_email( 'a.b+x@example.test' ) && '' === CheckoutThrottle::normalise_email( 'nope' ), 'SEC-074: mailbox normalisation cases' );
+	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'ab@gmail.com' ) ) );
+	$gate->restore_locale( null );
+	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'ab+3@gmail.com' ) ) );
+	$gate->restore_locale( null );
+	$ok( $resp instanceof WP_REST_Response && 429 === $resp->get_status(), 'SEC-074: the 4th attempt of one mailbox in the hour is 429', $resp instanceof WP_REST_Response ? (string) $resp->get_status() : 'null' );
+	RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) ) );
+	WC()->cart->empty_cart();
+
+	// SEC-072: the lock name comes from the Guard client key + mailbox, never from a cookie; the lock is taken after the token passed.
+	$name_a = Gate::lock_name( 'a@example.test' );
+	$_COOKIE['wp_woocommerce_session_zz'] = '1||1999999999||1999999999||abc';
+	$ok( $name_a === Gate::lock_name( 'A+x@example.test' ) && $name_a !== Gate::lock_name( 'b@example.test' ), 'SEC-072: lock name = client key + normalised mailbox, a session cookie changes nothing' );
+	unset( $_COOKIE['wp_woocommerce_session_zz'] );
+	global $wpdb;
+	$wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, 0 )', Gate::lock_name( 'held@example.test' ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	$calls = 0;
+	$resp  = $gate->pre_dispatch( null, $server, $mk_req( $body( 'held@example.test' ) ) );
+	$gate->restore_locale( null );
+	// The same connection already holds the named lock (MySQL lets it re-enter), so the busy path is proven by the order of work: the token WAS verified first.
+	$ok( $calls >= 1, 'SEC-072: the token is verified BEFORE the lock is taken', 'calls ' . $calls );
+	$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', Gate::lock_name( 'held@example.test' ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+
+	// SEC-071: the body cannot switch account creation on while the option is off.
+	$req = $mk_req(
+		[
+			'create_account'  => true,
+			'billing_address' => [ 'email' => 'x@example.test' ],
+			'extensions'      => $fresh(),
+		]
+	);
+	$gate->pre_dispatch( null, $server, $req );
+	$gate->restore_locale( null );
+	$ok( false === $req->get_param( 'create_account' ) && 'no' === (string) get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' ), 'SEC-071: create_account forced off; option is no' );
+
 	$cfg = vx_checkout_turnstile_config();
 	$ok( false === $cfg['enabled'] && '' === $cfg['site_key'], 'checkout config: disabled off the checkout page, no key printed' );
 	remove_all_filters( 'pre_http_request' );

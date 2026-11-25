@@ -2,7 +2,7 @@
 /**
  * Order privacy (TASK-045a): no order data in any cached output, masked e-mail on the thank-you page, noindex answers.
  *
- * - Cart, checkout, order-received, order-pay and the account pages answer `Cache-Control: private, no-store, max-age=0` (+ `nocache_headers()`, `DONOTCACHEPAGE`),
+ * - Cart, checkout, order-received, order-pay and the account pages answer `Cache-Control: private, no-store, max-age=0` (+ `nocache_headers()`, `DONOTCACHEPAGE`; order-received / order-pay also `Referrer-Policy: strict-origin-when-cross-origin`, SEC-077),
  *   and `X-Robots-Tag: noindex` when no such header is set yet (Rank Math prints the robots META only, never the header: checked, no duplicate output).
  * - Woo's `place-order-debug` log (full order data) is switched off through `woocommerce_order_step_logging_enabled` (filter `vextra/core/checkout/order_step_logging` re-enables it).
  * - `vx_mask_email()` (functions.php): the only form of the customer's e-mail the thank-you markup may print (`o***@example.com`).
@@ -99,6 +99,11 @@ final class Privacy {
 		}
 		nocache_headers();
 		header( 'Cache-Control: private, no-store, max-age=0' );
+		if ( function_exists( 'is_wc_endpoint_url' ) && ( is_wc_endpoint_url( 'order-received' ) || is_wc_endpoint_url( 'order-pay' ) ) ) {
+			// SEC-077: the URL carries the order key. `strict-origin-when-cross-origin` sends the full URL only to this site (our own requests still carry
+			// the page language in Referer) and only the origin elsewhere; `no-referrer` would break the language lookup of the Store API.
+			header( 'Referrer-Policy: strict-origin-when-cross-origin' );
+		}
 		foreach ( headers_list() as $line ) {
 			if ( 0 === stripos( $line, 'X-Robots-Tag:' ) ) {
 				return;

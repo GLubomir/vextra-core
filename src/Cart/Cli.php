@@ -3,7 +3,7 @@
  * WP-CLI `wp vextra cart apply-config [--dry-run]` (TASK-045a, F4 / F8): the WooCommerce settings and page content the cart / checkout
  * flow relies on. Idempotent, prints a diff (`key: from -> to`), a second real run changes nothing.
  *
- * - Options: guest checkout, login reminder, sign-up at checkout, generated password, coupons OFF, phone required, no redirect to the cart
+ * - Options: guest checkout, login reminder, NO sign-up at checkout or thank-you (SEC-071), generated password, coupons OFF, phone required, no redirect to the cart
  *   after add, no shipping calculator. `woocommerce_ship_to_destination` (force shipping to billing) is left as it is while no shipping zone exists
  *   (it is reported when a zone exists and the value differs).
  * - Pages: cart / checkout must be block pages in every language (reported, never auto-converted); their content is normalised by `PageContent`
@@ -28,14 +28,15 @@ final class Cli {
 	 * Woo options and the value the flow needs.
 	 */
 	public const OPTIONS = [
-		'woocommerce_enable_guest_checkout'          => 'yes',
-		'woocommerce_enable_checkout_login_reminder' => 'yes',
-		'woocommerce_enable_signup_and_login_from_checkout' => 'yes',
-		'woocommerce_registration_generate_password' => 'yes',
-		'woocommerce_enable_coupons'                 => 'no',
-		'woocommerce_checkout_phone_field'           => 'required',
-		'woocommerce_cart_redirect_after_add'        => 'no',
-		'woocommerce_enable_shipping_calc'           => 'no',
+		'woocommerce_enable_guest_checkout'           => 'yes',
+		'woocommerce_enable_checkout_login_reminder'  => 'yes',
+		'woocommerce_enable_signup_and_login_from_checkout' => 'no', // SEC-071: no account creation at checkout (the "e-mail already registered" answer is an enumeration oracle).
+		'woocommerce_enable_delayed_account_creation' => 'no', // No account offer on the thank-you page until the verified post-order offer exists.
+		'woocommerce_registration_generate_password'  => 'yes',
+		'woocommerce_enable_coupons'                  => 'no',
+		'woocommerce_checkout_phone_field'            => 'required',
+		'woocommerce_cart_redirect_after_add'         => 'no',
+		'woocommerce_enable_shipping_calc'            => 'no',
 	];
 
 	/**
