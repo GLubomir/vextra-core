@@ -165,6 +165,8 @@ final class Strings {
 			'By proceeding with your purchase you agree to our %1$s and %2$s' => [ __( 'Підтверджуючи замовлення, ви погоджуєтесь з %1$s та %2$s.', 'vextra-core' ) ],
 			'Terms and Conditions'                       => [ __( 'Публічною офертою', 'vextra-core' ) ],
 			'Privacy Policy'                             => [ __( 'Політикою конфіденційності', 'vextra-core' ) ],
+			// Optional apartment field link: Woo builds "+ Add %s" from the lower-cased label (nominative "квартира, офіс"); the only field that uses it here is address_2.
+			'+ Add %s'                                   => [ __( '+ Додати квартиру, офіс', 'vextra-core' ) ],
 			// Buttons.
 			'Proceed to Checkout'                        => [ __( 'Перейти до оформлення', 'vextra-core' ) ],
 			'Place Order'                                => [ __( 'Підтвердити замовлення', 'vextra-core' ) ],
