@@ -96,6 +96,27 @@ final class RankMath extends AbstractIntegration {
 	}
 
 	/**
+	 * Clear the noindex of a post (keeps other directives; writes `index` when the list ends up empty so the page is explicitly indexable).
+	 * Mirror of set_post_noindex(). Used by `wp vextra seo launch-pages`.
+	 *
+	 * @param int $post_id Post ID of a page.
+	 */
+	public function clear_post_noindex( int $post_id ): void {
+		if ( $post_id <= 0 ) {
+			return;
+		}
+		$robots = get_post_meta( $post_id, 'rank_math_robots', true );
+		if ( ! is_array( $robots ) || ! in_array( 'noindex', $robots, true ) ) {
+			return;
+		}
+		$robots = array_values( array_diff( $robots, [ 'noindex' ] ) );
+		if ( array() === $robots ) {
+			$robots = [ 'index' ];
+		}
+		update_post_meta( $post_id, 'rank_math_robots', $robots );
+	}
+
+	/**
 	 * Hook a robots filter (receives and returns the directive array, e.g. `[ 'index' => 'noindex', 'follow' => 'follow' ]`).
 	 * No-op when Rank Math is absent.
 	 *

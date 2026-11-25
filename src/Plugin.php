@@ -31,6 +31,7 @@ use Vextra\Core\Integrations\TwoFactor\TwoFactor;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Media\Module as Media;
 use Vextra\Core\Multilang\Multilang;
+use Vextra\Core\Orders\Module as Orders;
 use Vextra\Core\Performance\OptionPriming;
 use Vextra\Core\Performance\Performance;
 use Vextra\Core\Product\Product;
@@ -63,6 +64,7 @@ final class Plugin {
 		Media::class,
 		Cart::class,
 		Checkout::class,
+		Orders::class,
 	];
 
 	/**

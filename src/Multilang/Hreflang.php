@@ -21,6 +21,7 @@ use Vextra\Core\Catalog\SalePage;
 use Vextra\Core\Catalog\SaleProducts;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Seo\LaunchPages;
 use Vextra\Core\Seo\TermCounts;
 
 final class Hreflang {
@@ -197,7 +198,7 @@ final class Hreflang {
 			if ( SalePage::is_sale_page() && 0 === SaleProducts::count( SalePage::language_of( $id ) ) ) {
 				return true;
 			}
-			return $this->rank_math->is_post_noindex( $id );
+			return ! LaunchPages::shared( $this->polylang )->is_indexable( $id, $this->rank_math );
 		}
 		if ( is_tax( TermCounts::TAXONOMY ) ) {
 			return ! $this->counts->is_indexable( (int) get_queried_object_id() );
@@ -227,7 +228,7 @@ final class Hreflang {
 		$sale = SalePage::map();
 		foreach ( $this->polylang->translations( (int) get_queried_object_id() ) as $lang => $id ) {
 			// A sale page without products on sale is noindex: its language drops out of the set.
-			if ( 'publish' === get_post_status( $id ) && ! ( in_array( $id, $sale, true ) && 0 === SaleProducts::count( (string) $lang ) ) ) {
+			if ( 'publish' === get_post_status( $id ) && LaunchPages::shared( $this->polylang )->is_indexable( (int) $id, $this->rank_math ) && ! ( in_array( $id, $sale, true ) && 0 === SaleProducts::count( (string) $lang ) ) ) {
 				$out[] = (string) $lang;
 			}
 		}

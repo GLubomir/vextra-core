@@ -27,6 +27,8 @@ final class RobotsTxt {
 		'Disallow: /ru/cart/',
 		'Disallow: /ru/checkout/',
 		'Disallow: /ru/my-account/',
+		'Disallow: /track-order/',
+		'Disallow: /ru/otslezhivanie-zakaza/',
 		'Disallow: /*?*add-to-cart=',
 		'Disallow: /*?*wc-ajax=',
 		'Disallow: /*?s=',

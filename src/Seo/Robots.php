@@ -49,9 +49,17 @@ final class Robots {
 	 */
 	private bool $warned = false;
 
-	public function __construct( RankMath $rank_math, TermCounts $counts ) {
+	/**
+	 * Index gate of the info pages (null = guard off).
+	 *
+	 * @var LaunchPages|null
+	 */
+	private ?LaunchPages $launch;
+
+	public function __construct( RankMath $rank_math, TermCounts $counts, ?LaunchPages $launch = null ) {
 		$this->rank_math = $rank_math;
 		$this->counts    = $counts;
+		$this->launch    = $launch;
 	}
 
 	public function register(): void {
@@ -82,7 +90,34 @@ final class Robots {
 		} catch ( \Throwable $e ) {
 			$this->warn( $e );
 		}
-		return null;
+		return $this->noindex_pages( $robots );
+	}
+
+	/**
+	 * Info pages (TASK-047a): the order-tracking page is always `noindex, follow`; a launch page that fails the gate (too short or still holding an owner
+	 * placeholder) is `noindex, follow` even when Rank Math's meta says index. Fails CLOSED: an error keeps the page out of the index.
+	 *
+	 * @param array<string,mixed> $robots Directive map.
+	 * @return array<string,mixed>|null The forced directives, null when the page is not affected.
+	 */
+	private function noindex_pages( array $robots ): ?array {
+		if ( null === $this->launch || ! is_page() || 0 === absint( get_option( 'blog_public' ) ) ) {
+			return null;
+		}
+		$force = false;
+		try {
+			$id    = (int) get_queried_object_id();
+			$force = ! $this->launch->is_indexable( $id, $this->rank_math );
+		} catch ( \Throwable $e ) {
+			$this->warn( $e );
+			$force = true;
+		}
+		if ( ! $force ) {
+			return null;
+		}
+		$robots['index']  = 'noindex';
+		$robots['follow'] = 'follow';
+		return $robots;
 	}
 
 	/**
