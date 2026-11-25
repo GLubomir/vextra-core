@@ -31,10 +31,10 @@ final class RankMath extends AbstractIntegration {
 	public const WRITABLE_SITEMAP = [ 'include_featured_image' ];
 
 	/**
-	 * Rank Math titles options option name and its writable keys (`apply-config`: password-protected pages / products are `noindex`).
+	 * Rank Math titles options option name and its writable keys (`apply-config`: password-protected pages / products are `noindex`; `brand apply`: default social image URL + attachment id).
 	 */
 	public const TITLES_OPTION   = 'rank-math-options-titles';
-	public const WRITABLE_TITLES = [ 'noindex_password_protected' ];
+	public const WRITABLE_TITLES = [ 'noindex_password_protected', 'open_graph_image', 'open_graph_image_id' ];
 
 	public function id(): string {
 		return 'rankmath';

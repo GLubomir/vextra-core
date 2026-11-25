@@ -62,6 +62,8 @@ final class Conflicts {
 		'cart'      => [ 'fluid-checkout', 'fluid-checkout-pro', 'cartflows', 'cartflows-pro', 'funnel-builder', 'funnel-builder-pro', 'woofunnels-aero-checkout', 'cart-for-woocommerce', 'side-cart-woocommerce', 'woo-side-cart', 'woo-side-cart-premium', 'woocommerce-direct-checkout', 'flux-checkout', 'iconic-woo-flux-checkout', 'woocommerce-one-page-checkout', 'woo-one-page-checkout', 'wc-one-page-checkout', 'checkout-for-woocommerce' ],
 		// Table-of-contents plugins: the theme builds the TOC of `vx-document` pages (TASK-047a). Slugs from wordpress.org (2026-11).
 		'toc'       => [ 'easy-table-of-contents', 'luckywp-table-of-contents', 'table-of-contents-plus', 'fixed-toc', 'wp-table-of-contents' ],
+		// Favicon / site-icon plugins: the theme prints the icon tags and `/favicon.ico` from `assets/brand` (TASK-049a); they yield. Slugs from wordpress.org (2026-11), not exhaustive.
+		'favicon'   => [ 'favicon-by-realfavicongenerator', 'all-in-one-favicon', 'favicon-switcher', 'wp-favicon', 'favicon-rotator', 'ico-favicon' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -317,6 +319,16 @@ final class Conflicts {
 				'action'   => self::ACTION_WARN,
 				'blocking' => true,
 				'fix_hint' => static fn(): string => __( 'Кошик і оформлення — блоки WooCommerce, які стилізує тема, а vextra-core веде лічильник кошика, Turnstile, ліміти спроб і правила полів. Бічний кошик / Fluid Checkout / CartFlows / FunnelKit / «Direct Checkout» / Flux Checkout / one-page checkout підміняють ці сторінки й ламають ці правила: деактивуйте плагін.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'favicon-manager',
+				'title'    => static fn(): string => __( 'Активний плагін фавіконок: теги іконок і /favicon.ico теми вимкнено', 'vextra-core' ),
+				'module'   => 'brand-icons',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['favicon'] ),
+				'action'   => self::ACTION_YIELD,
+				'blocking' => false,
+				'fix_hint' => static fn(): string => __( 'Іконки сайту (SVG, PNG, apple-touch, /favicon.ico) веде тема з файлів assets/brand. Деактивуйте плагін, щоб повернути їх; до того іконки віддає плагін. `wp vextra brand apply` усе одно імпортує медіа.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
