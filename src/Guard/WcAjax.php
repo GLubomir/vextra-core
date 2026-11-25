@@ -23,6 +23,27 @@ final class WcAjax {
 			return;
 		}
 		Failsafe::run( 'wc-ajax', fn() => $this->check() );
+		Failsafe::run( 'checkout-post', fn() => $this->checkout_post() );
+	}
+
+	/**
+	 * Classic checkout / order-pay POST (`wc-ajax=checkout`, the plain checkout form POST, the order-pay form): the client IP bucket of the
+	 * checkout throttle (TASK-045a, same bucket as the Store API checkout). The billing e-mail bucket runs after validation
+	 * (`Checkout\Gate`), when the visitor has passed the Turnstile check.
+	 */
+	private function checkout_post(): void {
+		if ( 'POST' !== Request::method() || Exempt::is_exempt() ) {
+			return;
+		}
+		$ajax = 'checkout' === Request::wc_ajax();
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- presence checks of the submit fields only; Woo verifies its own nonces.
+		if ( ! $ajax && ! isset( $_POST['woocommerce_checkout_place_order'] ) && ! isset( $_POST['woocommerce_pay'] ) ) {
+			return;
+		}
+		$hit = CheckoutThrottle::hit_ip();
+		if ( ! $hit['allowed'] ) {
+			Responder::rate_limited( $hit['retry_after'], $ajax ? Responder::FORMAT_JSON : Responder::FORMAT_HTML, 'checkout-post', 'guard', CheckoutThrottle::message( $hit['retry_after'] ) );
+		}
 	}
 
 	private function check(): void {

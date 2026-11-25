@@ -45,4 +45,16 @@ final class Exempt {
 			|| user_can( $user, 'manage_options' );
 		// phpcs:enable
 	}
+
+	/**
+	 * Is the current user the owner bot (role `vextra_owner_bot` / cap `vx_owner_bot`)? Only this account skips the checkout Turnstile (TASK-045a).
+	 */
+	public static function is_owner_bot(): bool {
+		$user = wp_get_current_user();
+		if ( ! $user->exists() ) {
+			return false;
+		}
+		// phpcs:ignore WordPress.WP.Capabilities.Unknown -- carried by the role `vextra_owner_bot` (Security\OwnerBotRole).
+		return in_array( 'vextra_owner_bot', (array) $user->roles, true ) || in_array( 'vx_owner_bot', (array) $user->roles, true ) || user_can( $user, 'vx_owner_bot' );
+	}
 }

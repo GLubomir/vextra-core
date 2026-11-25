@@ -25,8 +25,9 @@ final class Responder {
 	 * @param string $format `json` (AJAX / REST-like) or `html` (page).
 	 * @param string $route   Short route label for the log.
 	 * @param string $channel Log channel (`guard` default; the Security module logs under `security`).
+	 * @param string $message Optional localised message (default: the generic one; the checkout throttle passes "try in N min").
 	 */
-	public static function rate_limited( int $retry, string $format, string $route, string $channel = 'guard' ): never {
+	public static function rate_limited( int $retry, string $format, string $route, string $channel = 'guard', string $message = '' ): never {
 		self::log( '429', $route, $channel );
 		self::headers( 429 );
 		header( 'Retry-After: ' . max( 1, $retry ) );
@@ -36,7 +37,7 @@ final class Responder {
 			echo wp_json_encode(
 				[
 					'code'    => 'vx_rate_limited',
-					'message' => 'Too many requests. Please wait before trying again.',
+					'message' => '' !== $message ? $message : 'Too many requests. Please wait before trying again.',
 					'data'    => [ 'status' => 429 ],
 				]
 			);
@@ -53,7 +54,7 @@ final class Responder {
 		}
 
 		wp_die(
-			esc_html__( 'Забагато запитів. Спробуйте за кілька секунд.', 'vextra-core' ),
+			'' !== $message ? esc_html( $message ) : esc_html__( 'Забагато запитів. Спробуйте за кілька секунд.', 'vextra-core' ),
 			esc_html__( 'Забагато запитів', 'vextra-core' ),
 			$args // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- fixed integer / language code built above.
 		);
