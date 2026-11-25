@@ -36,6 +36,13 @@ final class CountCookie {
 	 */
 	private static ?int $last = null;
 
+	/**
+	 * This request buffers the cart / checkout page.
+	 *
+	 * @var bool
+	 */
+	private bool $buffering = false;
+
 	public function register(): void {
 		foreach ( [ 'woocommerce_add_to_cart', 'woocommerce_cart_item_removed', 'woocommerce_after_cart_item_quantity_update', 'woocommerce_cart_emptied', 'woocommerce_cart_item_restored', 'wp_login' ] as $hook ) {
 			add_action( $hook, [ $this, 'sync' ], 20 );
@@ -43,6 +50,43 @@ final class CountCookie {
 		add_action( 'woocommerce_cart_loaded_from_session', [ $this, 'heal' ], 20 );
 		// Every Store API answer (incl. a GET that makes Woo clamp a quantity to the stock, or a failed add over stock): the cookie follows the cart that was just returned.
 		add_filter( 'rest_post_dispatch', [ $this, 'after_store_api' ], 20, 3 );
+		// Server-rendered cart / checkout page: the block preloads the cart through an internal Store API call while the page renders (no response header of its own),
+		// and Woo may clamp a quantity to the stock there. The page is buffered, the cookie is aligned at the very end, before the first byte leaves.
+		add_action( 'template_redirect', [ $this, 'buffer_page' ], 1 );
+		add_action( 'wp_footer', [ $this, 'sync_page' ], 9999 );
+	}
+
+	/**
+	 * Cart / checkout form page: start output buffering so the cookie header can still be sent after the cart blocks rendered.
+	 */
+	public function buffer_page(): void {
+		if ( ! $this->is_cart_flow_page() || headers_sent() || $this->buffering ) {
+			return;
+		}
+		$this->buffering = true;
+		ob_start();
+	}
+
+	/**
+	 * End of the page: align the cookie with the cart as it is after the render (only when it differs).
+	 */
+	public function sync_page(): void {
+		if ( ! $this->buffering || ! $this->may_write( true ) ) {
+			return;
+		}
+		$count = $this->count();
+		if ( null === $count ) {
+			return;
+		}
+		$have = isset( $_COOKIE[ self::NAME ] ) && is_string( $_COOKIE[ self::NAME ] ) ? sanitize_text_field( wp_unslash( $_COOKIE[ self::NAME ] ) ) : '';
+		if ( ( 0 === $count && '' === $have ) || (string) $count === $have ) {
+			return;
+		}
+		$this->write( $count );
+	}
+
+	private function is_cart_flow_page(): bool {
+		return ( function_exists( 'is_cart' ) && is_cart() ) || ( function_exists( 'is_checkout' ) && is_checkout() && ! ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-received' ) ) );
 	}
 
 	/**

@@ -45,6 +45,7 @@ final class Module implements ModuleInterface {
 
 		( new ResourceHints() )->register();
 		( new CountCookie() )->register();
+		( new VariationNames() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			( new Cli() )->register();

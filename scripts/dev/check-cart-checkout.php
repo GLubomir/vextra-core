@@ -278,6 +278,11 @@ if ( null !== $stock_before && $stock_before >= 3 ) {
 	);
 	$ok( 400 === $res['code'] && '' === $vx_line( $res ), 'add over stock: refused, cookie untouched (still 3)' );
 	wc_update_product_stock( wc_get_product( $product ), 1, 'set' );
+	// Server-rendered cart page (the block preloads the cart internally, no Store API response header): the cookie is aligned before the first byte.
+	foreach ( [ '/cart/', '/ru/cart/', '/checkout/' ] as $page ) {
+		$res = $http( 'GET', $page, [], $cookies );
+		$ok( 200 === $res['code'] && 0 === strpos( $vx_line( $res ), 'vx_cart=1;' ), 'page render ' . $page . ' after a stock clamp: vx_cart 3 -> 1', $res['code'] . ' ' . $vx_line( $res ) );
+	}
 	$res     = $http( 'GET', '/wp-json/wc/store/v1/cart', [], $cookies );
 	$cookies = $jar( $res, $cookies );
 	$ok( 200 === $res['code'] && 0 === strpos( $vx_line( $res ), 'vx_cart=1;' ), 'stock clamp on GET cart: vx_cart refreshed 3 -> 1', $vx_line( $res ) );
@@ -293,6 +298,59 @@ if ( null !== $stock_before && $stock_before >= 3 ) {
 		],
 		$cookies
 	);
+}
+
+// Variation values of a cart line are term NAMES in the language of the item, also on the other language's cart page (no raw slugs).
+$var_parent = get_page_by_path( 'demo-pdp-variable', OBJECT, 'product' );
+$var_child  = 0;
+if ( $var_parent instanceof WP_Post ) {
+	foreach ( (array) wc_get_product( $var_parent->ID )->get_children() as $child_id ) {
+		$attrs = wc_get_product( $child_id )->get_attributes();
+		if ( 'synii' === ( $attrs['pa_color'] ?? '' ) && '256-gb' === ( $attrs['pa_memory'] ?? '' ) ) {
+			$var_child = (int) $child_id;
+		}
+	}
+}
+if ( $var_child > 0 ) {
+	$vcookies = [];
+	$vres     = $http( 'GET', '/wp-json/wc/store/v1/cart' );
+	$vnonce   = (string) wp_remote_retrieve_header( [ 'headers' => $vres['headers'] ], 'nonce' );
+	$vcookies = $jar( $vres, $vcookies );
+	$vres     = $http(
+		'POST',
+		'/wp-json/wc/store/v1/cart/add-item',
+		[
+			'headers' => [
+				'Nonce'        => $vnonce,
+				'Content-Type' => 'application/json',
+			],
+			'body'    => wp_json_encode(
+				[
+					'id'       => $var_child,
+					'quantity' => 1,
+				]
+			),
+		],
+		$vcookies
+	);
+	$vcookies = $jar( $vres, $vcookies );
+	foreach ( [ '/cart/', '/ru/cart/' ] as $page ) {
+		$html = rawurldecode( $http( 'GET', $page, [], $vcookies )['body'] );
+		$ok( 1 === preg_match( '/value\W{1,12}u0421\\\\*u0438\\\\*u043d/', $html ) && 1 !== preg_match( '/value\W{1,12}(?:synii|256-gb)/', $html ), 'variation names on ' . $page . ': "Синій", no raw slug' );
+	}
+	$http(
+		'DELETE',
+		'/wp-json/wc/store/v1/cart/items',
+		[
+			'headers' => [
+				'Nonce'        => $vnonce,
+				'Content-Type' => 'application/json',
+			],
+		],
+		$vcookies
+	);
+} else {
+	WP_CLI::warning( 'demo-pdp-variable (synii / 256-gb) not found: variation-name check skipped.' );
 }
 
 // The page does not depend on the cookie (cache safety).
