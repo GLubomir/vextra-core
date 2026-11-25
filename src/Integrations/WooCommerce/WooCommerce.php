@@ -189,6 +189,18 @@ final class WooCommerce extends AbstractIntegration {
 	}
 
 	/**
+	 * Id of the Woo customer session of this request (the cookie hash is validated by Woo; a logged-in shopper = the user id, a guest = `t_<hash>`).
+	 * Loads the cart / session without creating a cookie. Fallback: ''.
+	 */
+	public function customer_session_id(): string {
+		$this->load_cart();
+		if ( ! $this->is_available() || ! function_exists( 'WC' ) || ! is_object( WC()->session ?? null ) || ! method_exists( WC()->session, 'get_customer_id' ) ) {
+			return '';
+		}
+		return (string) WC()->session->get_customer_id();
+	}
+
+	/**
 	 * Upsell and cross-sell ids of a product (CRUD getters). Fallback: both empty.
 	 *
 	 * @param int $product_id Product id.
@@ -389,5 +401,80 @@ final class WooCommerce extends AbstractIntegration {
 			);
 		}
 		return $count;
+	}
+
+	/**
+	 * Register ONE string property under `extensions.<namespace>` of the Store API checkout endpoint (documented
+	 * `woocommerce_store_api_register_endpoint_data()`, no storage, no output: the value is only read by the caller from the request).
+	 * Called now when Woo's blocks are already loaded, else on `woocommerce_blocks_loaded`. Fallback: false (nothing registered).
+	 *
+	 * @param string $extension Extension namespace (`vextra`).
+	 * @param string $property  Property name (`turnstile`).
+	 * @param string $label     Schema description.
+	 */
+	public function register_checkout_extension( string $extension, string $property, string $label ): bool {
+		if ( ! $this->is_available() ) {
+			return false;
+		}
+		$register = static function () use ( $extension, $property, $label ): void {
+			if ( ! function_exists( 'woocommerce_store_api_register_endpoint_data' ) ) {
+				return;
+			}
+			woocommerce_store_api_register_endpoint_data(
+				[
+					'endpoint'        => 'checkout',
+					'namespace'       => $extension,
+					'schema_callback' => static fn(): array => [
+						$property => [
+							'description' => $label,
+							'type'        => [ 'string', 'null' ],
+							'context'     => [],
+							'readonly'    => false,
+							'arg_options' => [
+								'validate_callback' => static fn( $value ): bool => null === $value || is_string( $value ),
+								'sanitize_callback' => static fn( $value ): string => is_string( $value ) ? substr( sanitize_text_field( $value ), 0, 2100 ) : '',
+							],
+						],
+					],
+					'data_callback'   => static fn(): array => [],
+				]
+			);
+		};
+		if ( did_action( 'woocommerce_blocks_loaded' ) ) {
+			$register();
+		} else {
+			add_action( 'woocommerce_blocks_loaded', $register );
+		}
+		return true;
+	}
+
+	/**
+	 * Exception the Store API turns into a JSON error (`code`, `message`, HTTP status) when thrown from a checkout hook. Fallback: null.
+	 *
+	 * @param string $code    Machine error code.
+	 * @param string $message Message shown to the shopper.
+	 * @param int    $status  HTTP status.
+	 */
+	public function route_exception( string $code, string $message, int $status ): ?\Exception {
+		$class = '\Automattic\WooCommerce\StoreApi\Exceptions\RouteException';
+		return $this->is_available() && class_exists( $class ) ? new $class( $code, $message, $status ) : null;
+	}
+
+	/**
+	 * Hook the documented action that fires while the Store API checkout copies the request onto the order
+	 * (`woocommerce_store_api_checkout_update_order_from_request`, arguments: order, request).
+	 *
+	 * @param callable $callback Callback.
+	 * @param int      $priority Priority.
+	 */
+	public function on_checkout_order_update( callable $callback, int $priority = 10 ): void {
+		add_action( 'woocommerce_store_api_checkout_update_order_from_request', $callback, $priority, 2 );
+	}
+
+	/**
+	 * Block checkout page (not the order-received / order-pay endpoints): the page that loads the Turnstile script.
+	 */
+	public function is_checkout_form_page(): bool {
+		return $this->is_available() && function_exists( 'is_checkout' ) && is_checkout() && ! ( function_exists( 'is_wc_endpoint_url' ) && ( is_wc_endpoint_url( 'order-received' ) || is_wc_endpoint_url( 'order-pay' ) ) );
 	}
 }

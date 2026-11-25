@@ -6,6 +6,8 @@
  * `init` after it is missing (the "scheduled" flag is an autoloaded option, so no query per request). Each run deletes at most
  * `draft_batch` orders older than `draft_age` seconds through `wc_get_orders()` + `WC_Order::delete()`; a full batch queues
  * one more async run, so the backlog drains in batches. No raw SQL. Deactivation unschedules the hook.
+ * A draft without contact data (no billing e-mail, no customer id) is purged after `draft_age_anon` (6 h); one with contact data after `draft_age` (24 h).
+ * The block checkout creates `checkout-draft` orders (status `wc-checkout-draft`), the same ones this job removes.
  *
  * @package Vextra\Core
  */
@@ -76,14 +78,18 @@ final class DraftOrders {
 				/**
 				 * Filters the minimum age (seconds) of a draft order before it is purged.
 				 *
-				 * @param int $age Seconds, default 24 h.
+				 * @param int $age Seconds, default 24 h (drafts with a billing e-mail or a customer; contact-less drafts use `draft_age_anon`).
 				 */
 				$age = (int) apply_filters( 'vextra/core/guard/draft_age', Config::get( 'draft_age' ) );
+
+				// TASK-045a: a draft WITHOUT contact data (no billing e-mail, no customer) is bot noise: shorter age (`draft_age_anon`, default 6 h).
+				$age_anon = min( max( 60, $age ), max( 60, Config::get( 'draft_age_anon' ) ) );
+				$age      = max( 60, $age );
 
 				$orders = wc_get_orders(
 					[
 						'status'       => 'checkout-draft',
-						'date_created' => '<' . ( time() - max( 60, $age ) ),
+						'date_created' => '<' . ( time() - $age_anon ),
 						'limit'        => $batch,
 						'orderby'      => 'date',
 						'order'        => 'ASC',
@@ -93,10 +99,17 @@ final class DraftOrders {
 
 				$count = 0;
 				foreach ( (array) $orders as $order ) {
-					if ( $order instanceof \WC_Order && 'checkout-draft' === $order->get_status() ) {
-						$order->delete( true );
-						++$count;
+					if ( ! $order instanceof \WC_Order || 'checkout-draft' !== $order->get_status() ) {
+						continue;
 					}
+					$created     = $order->get_date_created();
+					$has_contact = '' !== (string) $order->get_billing_email() || $order->get_customer_id() > 0;
+					$limit       = $has_contact ? $age : $age_anon;
+					if ( $created instanceof \WC_DateTime && $created->getTimestamp() > time() - $limit ) {
+						continue; // Contact data present: keep until the longer age.
+					}
+					$order->delete( true );
+					++$count;
 				}
 
 				if ( $count >= $batch && function_exists( 'as_enqueue_async_action' ) ) {

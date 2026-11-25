@@ -18,29 +18,34 @@ final class Config {
 	 * Default numbers. `*_limit` = requests allowed per `*_window` seconds and client IP.
 	 */
 	public const DEFAULTS = [
-		'store_limit'     => 25,    // Store API (Woo built-in limiter), all routes.
-		'store_window'    => 10,
-		'ajax_limit'      => 30,    // ?wc-ajax= endpoints.
-		'ajax_window'     => 10,
-		'coupon_limit'    => 10,    // Coupon apply guesses (Store API + wc-ajax).
-		'coupon_window'   => 600,
-		'rest_limit'      => 60,    // Any other anonymous REST route.
-		'rest_window'     => 60,
-		'search_limit'    => 15,    // Front-end search + REST `search=`.
-		'search_window'   => 60,
-		'search_min'      => 2,     // Characters; shorter queries are redirected.
-		'search_max'      => 100,   // Characters; longer queries are truncated.
-		'search_ttl'      => 120,   // Seconds a search id list is cached.
-		'search_max_ids'  => 500,   // Larger result sets are never cached.
-		'facet_limit'     => 120,   // Facet / sort / search / paged URLs (query-string params), per IP. Generous: CGNAT.
-		'facet_window'    => 60,
-		'cartpost_limit'  => 20,    // POST add-to-cart (no-JS form), per IP.
-		'cartpost_window' => 60,
-		'per_page_cap'    => 20,    // Anonymous wp/v2 product listings.
-		'termedit_limit'  => 30,    // Owner-bot category edits (each rewrites redirect rows), per user.
-		'termedit_window' => 600,
-		'draft_age'       => 86400, // Seconds before a checkout-draft order is purged.
-		'draft_batch'     => 100,
+		'store_limit'           => 25,    // Store API (Woo built-in limiter), all routes.
+		'store_window'          => 10,
+		'ajax_limit'            => 30,    // ?wc-ajax= endpoints.
+		'ajax_window'           => 10,
+		'coupon_limit'          => 10,    // Coupon apply guesses (Store API + wc-ajax).
+		'coupon_window'         => 600,
+		'rest_limit'            => 60,    // Any other anonymous REST route.
+		'rest_window'           => 60,
+		'search_limit'          => 15,    // Front-end search + REST `search=`.
+		'search_window'         => 60,
+		'search_min'            => 2,     // Characters; shorter queries are redirected.
+		'search_max'            => 100,   // Characters; longer queries are truncated.
+		'search_ttl'            => 120,   // Seconds a search id list is cached.
+		'search_max_ids'        => 500,   // Larger result sets are never cached.
+		'facet_limit'           => 120,   // Facet / sort / search / paged URLs (query-string params), per IP. Generous: CGNAT.
+		'facet_window'          => 60,
+		'cartpost_limit'        => 20,    // POST add-to-cart (no-JS form), per IP.
+		'cartpost_window'       => 60,
+		'per_page_cap'          => 20,    // Anonymous wp/v2 product listings.
+		'termedit_limit'        => 30,    // Owner-bot category edits (each rewrites redirect rows), per user.
+		'termedit_window'       => 600,
+		'draft_age'             => 86400, // Seconds before a checkout-draft order is purged.
+		'draft_age_anon'        => 21600, // Same for a draft WITHOUT customer contact data (no e-mail, no user): bot-created, 6 h (TASK-045a).
+		'draft_batch'           => 100,
+		'checkout_limit'        => 10,   // Checkout POST attempts per client IP (CGNAT-safe, IPv6 /64) (TASK-045a).
+		'checkout_window'       => 600,
+		'checkout_email_limit'  => 3,    // Checkout POST attempts per billing e-mail (hashed), counted after the Turnstile check.
+		'checkout_email_window' => 3600,
 	];
 
 	/**

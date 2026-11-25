@@ -21,9 +21,9 @@ use Vextra\Core\Security\OwnerBotRole;
 final class OptionPriming {
 
 	/**
-	 * Core and own options read on every request (not autoloaded).
+	 * Core and own options read on every request (not autoloaded); `vx_pdp_info` = the free-shipping threshold of the topbar (TASK-045a, usually absent: one query saved).
 	 */
-	private const OWN = [ 'site_logo', OwnerBotRole::OPTION ];
+	private const OWN = [ 'site_logo', OwnerBotRole::OPTION, 'vx_pdp_info' ];
 
 	/**
 	 * Called from the kernel boot (plugin file include time).

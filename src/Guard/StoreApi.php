@@ -30,6 +30,7 @@ final class StoreApi {
 	private const STORE_ROUTE  = '#^/wc/store(?:/|$)#i';
 	private const LISTING      = '#^/wp/v2/(?:product|product_cat|product_tag)(?:/|$)#i';
 	private const REVIEWS      = '#^/wc/store(?:/v\d+)?/products/reviews/?$#i';
+	public const CHECKOUT      = '#^/wc/store(?:/v\d+)?/checkout/?$#i';
 
 	public function register(): void {
 		add_filter( 'woocommerce_store_api_rate_limit_options', [ $this, 'limiter_options' ], 20 );
@@ -154,6 +155,13 @@ final class StoreApi {
 					return $this->limited( $hit['retry_after'], 'store-api-coupon' );
 				}
 			}
+			if ( 'POST' === strtoupper( $request->get_method() ) && 1 === preg_match( self::CHECKOUT, $route ) ) {
+				// TASK-045a: every attempt that reaches the handler counts for the client IP (also the ones Turnstile refuses afterwards).
+				$hit = CheckoutThrottle::hit_ip();
+				if ( ! $hit['allowed'] ) {
+					return $this->limited( $hit['retry_after'], 'store-api-checkout', CheckoutThrottle::message( $hit['retry_after'] ) );
+				}
+			}
 			return null; // Woo's limiter counts the rest of the Store API.
 		}
 
@@ -234,13 +242,14 @@ final class StoreApi {
 	/**
 	 * 429 response + Retry-After.
 	 *
-	 * @param int    $retry Seconds.
-	 * @param string $route Log label.
+	 * @param int    $retry   Seconds.
+	 * @param string $route   Log label.
+	 * @param string $message Optional localised message (default: the generic English one).
 	 * @return \WP_REST_Response
 	 */
-	private function limited( int $retry, string $route ): \WP_REST_Response {
+	private function limited( int $retry, string $route, string $message = '' ): \WP_REST_Response {
 		Responder::log( '429', $route );
-		$response = $this->error( 'vx_rate_limited', 'Too many requests. Please wait before trying again.', 429 );
+		$response = $this->error( 'vx_rate_limited', '' !== $message ? $message : 'Too many requests. Please wait before trying again.', 429 );
 		$response->header( 'Retry-After', (string) max( 1, $retry ) );
 		$response->header( 'Cache-Control', 'no-store' );
 		return $response;

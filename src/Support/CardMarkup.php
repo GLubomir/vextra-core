@@ -21,9 +21,10 @@ final class CardMarkup {
 	 *
 	 * @param array<int,array<string,mixed>> $items Items with at least `id`.
 	 * @param string                         $lang  Language slug (the markup is rendered in it).
+	 * @param array<string,string>           $card  Optional card args: `variant` (grid|compact|list), `rec_src` (attribution field of the add-to-cart form).
 	 * @return array<int,array<string,mixed>>
 	 */
-	public static function attach( array $items, string $lang ): array {
+	public static function attach( array $items, string $lang, array $card = [] ): array {
 		$out = [];
 		foreach ( $items as $item ) {
 			$out[] = $item + [ 'html' => '' ];
@@ -36,17 +37,19 @@ final class CardMarkup {
 		if ( class_exists( '\Vextra\Theme\Woo\ProductCardData' ) ) {
 			\Vextra\Theme\Woo\ProductCardData::prime_catalog( array_column( $out, 'id' ) );
 		}
+		$variant = isset( $card['variant'] ) && in_array( $card['variant'], [ 'grid', 'compact', 'list' ], true ) ? (string) $card['variant'] : 'grid';
 		foreach ( $out as $i => $item ) {
 			ob_start();
 			vx_component(
 				'product-card',
 				[
 					'product'    => $item['id'],
-					'variant'    => 'grid',
+					'variant'    => $variant,
+					'rec_src'    => isset( $card['rec_src'] ) && is_string( $card['rec_src'] ) ? $card['rec_src'] : '',
 					'heading'    => 'h3',
 					'image_size' => 'vx-product-card',
 					'lazy'       => true,
-					'cache'      => true,
+					'cache'      => 'grid' === $variant, // The shared card-data cache holds the grid card only; other variants are built per request (the route answer is cached as a whole).
 				]
 			);
 			$out[ $i ]['html'] = trim( (string) ob_get_clean() );

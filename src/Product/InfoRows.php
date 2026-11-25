@@ -163,18 +163,62 @@ final class InfoRows {
 			}
 		}
 		if ( $threshold > 0 && function_exists( 'wc_price' ) ) {
-			$amount = html_entity_decode( wp_strip_all_tags( wc_price( $threshold ) ), ENT_QUOTES, 'UTF-8' );
-			$format = self::FREE_SHIPPING[ $slot ] ?? self::FREE_SHIPPING['default'];
 			array_unshift(
 				$out,
 				[
 					'key'  => 'free_shipping',
-					'text' => sprintf( $format, $amount ),
+					'text' => self::free_shipping_text( $threshold, $slot ),
 					'url'  => '',
 				]
 			);
 		}
 		return $out;
+	}
+
+	/**
+	 * "Безкоштовна доставка від 1 500 ₴" / "Бесплатная доставка от 1 500 ₴".
+	 *
+	 * @param int    $threshold Threshold in the store currency (whole units).
+	 * @param string $slot      Storage slot of the language.
+	 */
+	private static function free_shipping_text( int $threshold, string $slot ): string {
+		$amount = html_entity_decode( wp_strip_all_tags( wc_price( $threshold ) ), ENT_QUOTES, 'UTF-8' );
+		$format = self::FREE_SHIPPING[ $slot ] ?? self::FREE_SHIPPING['default'];
+		return sprintf( $format, $amount );
+	}
+
+	/**
+	 * Free-shipping threshold of a language (the single source of the bar, the topbar and the info row; TASK-045a).
+	 * Reads the option directly (it is on the primed-option list: no query on a browsing page); 0 / no entry = disabled.
+	 * `threshold_minor` is in the Store API minor unit of the store currency (`wc_get_price_decimals()`: UAH here has none, so it equals the threshold).
+	 *
+	 * @param string $lang Language slug ('' = the current one).
+	 * @return array{enabled:bool,threshold:int,threshold_minor:int,text:string}
+	 */
+	public static function free_shipping( string $lang = '' ): array {
+		if ( '' === $lang ) {
+			$pll  = Plugin::instance()->integration( 'polylang' );
+			$lang = $pll instanceof Polylang ? $pll->current_language() : '';
+		}
+		$slot  = self::slot( $lang );
+		$saved = get_option( self::OPTION, [] );
+		$entry = is_array( $saved ) && isset( $saved[ $slot ] ) && is_array( $saved[ $slot ] ) ? $saved[ $slot ] : [];
+		$value = absint( $entry['free_shipping_threshold'] ?? 0 );
+		if ( $value <= 0 || ! function_exists( 'wc_price' ) ) {
+			return [
+				'enabled'         => false,
+				'threshold'       => 0,
+				'threshold_minor' => 0,
+				'text'            => '',
+			];
+		}
+		$decimals = function_exists( 'wc_get_price_decimals' ) ? max( 0, (int) wc_get_price_decimals() ) : 2;
+		return [
+			'enabled'         => true,
+			'threshold'       => $value,
+			'threshold_minor' => $value * (int) ( 10 ** $decimals ),
+			'text'            => self::free_shipping_text( $value, $slot ),
+		];
 	}
 
 	/**
