@@ -23,7 +23,7 @@ final class Smoke {
 	/**
 	 * Page keys in run order.
 	 */
-	public const PAGES = [ 'home', 'shop', 'category', 'subcategory', 'product', 'cart', 'account', 'search', '404', 'sitemap' ];
+	public const PAGES = [ 'home', 'shop', 'category', 'subcategory', 'product', 'cart', 'account', 'search', '404', 'sitemap', 'state' ];
 
 	/**
 	 * Polylang adapter.
@@ -101,6 +101,21 @@ final class Smoke {
 
 		if ( ( '' === $only || 'sitemap' === $only ) && '' === $only_lang ) {
 			$rows[] = $this->evaluate_sitemap( $langs, $preview );
+		}
+		if ( '' === $only || 'state' === $only ) {
+			// With --lang the per-language checks (front-page twin, home-render, woo-pages twins) cover that language only; the global ones always run.
+			$state = new StateChecks( $this->polylang );
+			$rows  = array_merge(
+				$rows,
+				$state->run(
+					$preview,
+					'' !== $only_lang ? [ $only_lang ] : $langs,
+					function ( string $url ) use ( $preview ): array {
+						return $this->request( $url, $preview );
+					},
+					fn( string $url ): bool => $this->same_host( $url )
+				)
+			);
 		}
 		return [
 			'preview' => $preview,
@@ -448,7 +463,7 @@ final class Smoke {
 	 *
 	 * @param string $url     Absolute URL on the site host.
 	 * @param bool   $preview Send the preview header (the caller already checked the host).
-	 * @return array{error:?string,code:int,ms:int,body:string,location:string}
+	 * @return array{error:?string,code:int,ms:int,body:string,location:string,cookies:string[]}
 	 */
 	private function request( string $url, bool $preview ): array {
 		$args = [
@@ -477,6 +492,7 @@ final class Smoke {
 				'ms'       => $ms,
 				'body'     => '',
 				'location' => '',
+				'cookies'  => [],
 			];
 		}
 		return [
@@ -485,6 +501,12 @@ final class Smoke {
 			'ms'       => $ms,
 			'body'     => (string) wp_remote_retrieve_body( $res ),
 			'location' => (string) wp_remote_retrieve_header( $res, 'location' ),
+			'cookies'  => array_values(
+				array_map(
+					static fn( $cookie ): string => $cookie instanceof \WP_Http_Cookie ? (string) $cookie->name : '',
+					(array) wp_remote_retrieve_cookies( $res )
+				)
+			),
 		];
 	}
 }

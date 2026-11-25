@@ -51,7 +51,7 @@ final class Cli {
 			'vextra smoke',
 			[ $this, 'smoke' ],
 			[
-				'shortdesc' => 'HTTP smoke checks of every language: home, shop, categories, product, cart, account, search, 404, sitemap. Exit 1 on any FAIL.',
+				'shortdesc' => 'HTTP smoke checks of every language: home, shop, categories, product, cart, account, search, 404, sitemap, plus read-only site state checks (`--only=state`: front page, home render, admin, Woo pages, test leftovers, WebP, anonymous cart cookie). Exit 1 on any FAIL.',
 				'synopsis'  => [
 					[
 						'type'        => 'assoc',
