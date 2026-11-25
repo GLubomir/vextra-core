@@ -51,16 +51,31 @@ final class Gate {
 	private bool $switched = false;
 
 	/**
-	 * Name of the MySQL lock held by this request (null = none).
+	 * Names of the MySQL locks held by this request (empty = none).
 	 *
-	 * @var string|null
+	 * @var string[]
 	 */
-	private ?string $lock_name = null;
+	private array $locks = [];
+
+	/**
+	 * Store API checkout POSTs seen by this PHP request (SEC-078: at most one, whatever dispatches them: Woo batch, core batch, internal call).
+	 *
+	 * @var int
+	 */
+	private int $checkouts = 0;
+
+	/**
+	 * The Store API checkout POST of this request passed the gate and is being processed (the post-validation e-mail count applies to it only).
+	 *
+	 * @var bool
+	 */
+	private bool $in_checkout = false;
 
 	public function register(): void {
 		add_filter( 'rest_pre_dispatch', [ $this, 'pre_dispatch' ], 6, 3 );
 		add_filter( 'rest_post_dispatch', [ $this, 'restore_locale' ], 999 );
 		add_action( 'woocommerce_after_checkout_validation', [ $this, 'classic_email_bucket' ], 20, 2 );
+		add_action( 'woocommerce_checkout_validate_order_before_payment', [ $this, 'store_api_email_bucket' ], 20, 2 );
 	}
 
 	/**
@@ -84,6 +99,10 @@ final class Gate {
 		if ( 1 !== preg_match( StoreApi::CHECKOUT, $route ) ) {
 			return $result;
 		}
+		if ( 'POST' === strtoupper( $request->get_method() ) && ++$this->checkouts > 1 ) {
+			// SEC-078: one HTTP request places at most one order (a second checkout of the same PHP request, however it got here, is refused before Turnstile).
+			return $this->bad_request( 'vx_checkout_once' );
+		}
 		// A REST request has no Polylang context: every message of the checkout answer (Woo's and ours) is rendered in the language of the page it came from.
 		if ( ! $this->switched ) {
 			$this->switched = (bool) Failsafe::run( 'checkout-locale', static fn(): bool => CheckoutThrottle::switch_locale(), false );
@@ -104,6 +123,7 @@ final class Gate {
 	 */
 	public function restore_locale( $response ) {
 		$this->unlock();
+		$this->in_checkout = false;
 		if ( $this->switched ) {
 			$this->switched = false;
 			restore_previous_locale();
@@ -136,7 +156,7 @@ final class Gate {
 		}
 		$billing = $request->get_param( 'billing_address' );
 		$email   = is_array( $billing ) && isset( $billing['email'] ) && is_string( $billing['email'] ) ? $billing['email'] : '';
-		// 3. One place-order at a time per (client key, mailbox) (SEC-072): server-derived key, taken only after the token passed.
+		// 3. One place-order at a time per (client IP + mailbox) AND per Woo customer session (SEC-072 / SEC-079): server-derived keys, taken only after the token passed.
 		if ( ! $this->lock( $email ) ) {
 			$busy = rest_convert_error_to_response( new \WP_Error( 'vx_checkout_busy', __( 'Замовлення вже оформлюється. Зачекайте кілька секунд.', 'vextra-core' ), [ 'status' => 409 ] ) );
 			$busy->header( 'Cache-Control', 'no-store' );
@@ -145,30 +165,37 @@ final class Gate {
 		if ( ! Config::enabled() || Exempt::is_exempt() ) {
 			return null;
 		}
-		// 4. E-mail bucket (SEC-074): only for a request that can reach order creation (non-empty cart), keyed on the normalised mailbox.
-		if ( $this->cart_is_empty() ) {
-			return null;
-		}
-		$hit = CheckoutThrottle::hit_email( $email );
-		if ( $hit['allowed'] ) {
+		$this->in_checkout = true;
+		// 4. E-mail bucket (SEC-074): an already exhausted mailbox is refused here WITHOUT counting; the attempt itself is counted only after Woo validated
+		// the cart and the addresses (`store_api_email_bucket()`), so invalid requests can never lock a victim's mailbox.
+		$peek = CheckoutThrottle::peek_email( $email );
+		if ( $peek['allowed'] ) {
 			return null;
 		}
 		Responder::log( '429', 'store-api-checkout-email' );
-		$response = rest_convert_error_to_response( new \WP_Error( 'vx_rate_limited', CheckoutThrottle::message( $hit['retry_after'] ), [ 'status' => 429 ] ) );
-		$response->header( 'Retry-After', (string) max( 1, $hit['retry_after'] ) );
+		$response = rest_convert_error_to_response( new \WP_Error( 'vx_rate_limited', CheckoutThrottle::message( $peek['retry_after'] ), [ 'status' => 429 ] ) );
+		$response->header( 'Retry-After', (string) max( 1, $peek['retry_after'] ) );
 		$response->header( 'Cache-Control', 'no-store' );
 		return $response;
 	}
 
 	/**
-	 * The cart of this session holds nothing (Woo answers 409 `cart_empty`). The session is loaded here, never created.
+	 * Store API: count the billing mailbox once the order passed ALL of Woo's validation (cart, coupons, e-mail, shipping, addresses), just before the
+	 * order is finalised and payment is attempted (SEC-074). Over the limit = a validation error (Woo answers 400, nothing is paid).
+	 *
+	 * @param mixed $order  Order.
+	 * @param mixed $errors WP_Error collecting custom validation errors.
 	 */
-	private function cart_is_empty(): bool {
-		$woo = Plugin::instance()->integration( 'woocommerce' );
-		if ( $woo instanceof WooCommerce ) {
-			$woo->load_cart();
+	public function store_api_email_bucket( $order, $errors = null ): void {
+		if ( ! $this->in_checkout || ! $order instanceof \WC_Order || ! $errors instanceof \WP_Error || $errors->has_errors() ) {
+			return;
 		}
-		return ! function_exists( 'WC' ) || ! WC()->cart instanceof \WC_Cart || WC()->cart->is_empty();
+		$hit = Failsafe::run( 'checkout-email', static fn(): array => CheckoutThrottle::hit_email( (string) $order->get_billing_email() ), [ 'allowed' => true ] );
+		if ( ! empty( $hit['allowed'] ) ) {
+			return;
+		}
+		Responder::log( '429', 'store-api-checkout-email' );
+		$errors->add( 'vx_rate_limited', CheckoutThrottle::message( (int) ( $hit['retry_after'] ?? 60 ) ) );
 	}
 
 	/**
@@ -236,7 +263,7 @@ final class Gate {
 	}
 
 	/**
-	 * Name of the order lock: server-derived client key (IP, IPv6 per /64) + normalised mailbox (SEC-072). Nothing the client sends decides it.
+	 * Name of the (client key + mailbox) lock: server-derived client key (IP, IPv6 per /64) + normalised mailbox (SEC-072). Nothing the client sends decides it.
 	 *
 	 * @param string $email Raw billing e-mail.
 	 */
@@ -246,38 +273,55 @@ final class Gate {
 	}
 
 	/**
-	 * One place-order request per (client key, mailbox) at a time: a MySQL named lock (atomic, released when the request ends or in `rest_post_dispatch`).
-	 * Fail open: no database lock available = allowed.
+	 * Name of the session lock (SEC-079): the Woo customer id that Woo validated against its cookie hash (never a raw cookie value).
+	 *
+	 * @param string $customer_id `WC()->session->get_customer_id()`.
+	 */
+	public static function session_lock_name( string $customer_id ): string {
+		global $wpdb;
+		return 'vx_cs_' . substr( md5( $wpdb->prefix . '|session|' . $customer_id ), 0, 24 );
+	}
+
+	/**
+	 * One place-order request at a time per (client key + mailbox) AND per Woo customer session: MySQL named locks (atomic, non-blocking, released when
+	 * the request ends or in `rest_post_dispatch`). Both are taken or none. Fail open: no database lock available = allowed.
 	 *
 	 * @param string $email Raw billing e-mail.
 	 */
 	private function lock( string $email ): bool {
 		global $wpdb;
-		if ( null !== $this->lock_name ) {
+		if ( [] !== $this->locks ) {
 			return true;
 		}
-		$name = self::lock_name( $email );
-		$got  = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, 0 )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- named lock, no table.
-		if ( null === $got || '' === (string) $got ) {
-			return true;
+		$names = [ self::lock_name( $email ) ];
+		$woo   = Plugin::instance()->integration( 'woocommerce' );
+		$sid   = $woo instanceof WooCommerce ? $woo->customer_session_id() : '';
+		if ( '' !== $sid ) {
+			$names[] = self::session_lock_name( $sid );
 		}
-		if ( 1 !== (int) $got ) {
-			return false;
+		foreach ( $names as $name ) {
+			$got = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, 0 )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- named lock, no table.
+			if ( null === $got || '' === (string) $got ) {
+				continue; // Fail open.
+			}
+			if ( 1 !== (int) $got ) {
+				$this->unlock();
+				return false;
+			}
+			$this->locks[] = $name;
 		}
-		$this->lock_name = $name;
 		return true;
 	}
 
 	/**
-	 * Release the order lock.
+	 * Release the order locks.
 	 */
 	private function unlock(): void {
 		global $wpdb;
-		if ( null === $this->lock_name ) {
-			return;
+		foreach ( $this->locks as $name ) {
+			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- named lock, no table.
 		}
-		$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $this->lock_name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- named lock, no table.
-		$this->lock_name = null;
+		$this->locks = [];
 	}
 
 	/**

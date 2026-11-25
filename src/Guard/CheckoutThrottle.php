@@ -50,6 +50,28 @@ final class CheckoutThrottle {
 	}
 
 	/**
+	 * Is this mailbox already over its limit? Read-only: nothing is counted (SEC-074: only a validated order attempt counts, see `hit_email()`).
+	 *
+	 * @param string $email Raw billing e-mail.
+	 * @return array{allowed:bool,retry_after:int}
+	 */
+	public static function peek_email( string $email ): array {
+		$email = self::normalise_email( $email );
+		$limit = (int) Config::get( 'checkout_email_limit' );
+		if ( '' === $email || $limit <= 0 ) {
+			return [
+				'allowed'     => true,
+				'retry_after' => 0,
+			];
+		}
+		$state = RateLimiter::peek( 'checkout_mail', hash_hmac( 'sha256', $email, wp_salt( 'auth' ) ), $limit );
+		return [
+			'allowed'     => $state['count'] < $limit,
+			'retry_after' => $state['retry_after'],
+		];
+	}
+
+	/**
 	 * Mailbox key of an address (SEC-074): lower case, `+tag` removed, dots removed for Gmail (`googlemail.com` = `gmail.com`), so aliases of one inbox share one
 	 * bucket. '' for a malformed address. Used for the e-mail bucket and the order lock; never stored or logged.
 	 *

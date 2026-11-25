@@ -189,6 +189,18 @@ final class WooCommerce extends AbstractIntegration {
 	}
 
 	/**
+	 * Id of the Woo customer session of this request (the cookie hash is validated by Woo; a logged-in shopper = the user id, a guest = `t_<hash>`).
+	 * Loads the cart / session without creating a cookie. Fallback: ''.
+	 */
+	public function customer_session_id(): string {
+		$this->load_cart();
+		if ( ! $this->is_available() || ! function_exists( 'WC' ) || ! is_object( WC()->session ?? null ) || ! method_exists( WC()->session, 'get_customer_id' ) ) {
+			return '';
+		}
+		return (string) WC()->session->get_customer_id();
+	}
+
+	/**
 	 * Upsell and cross-sell ids of a product (CRUD getters). Fallback: both empty.
 	 *
 	 * @param int $product_id Product id.

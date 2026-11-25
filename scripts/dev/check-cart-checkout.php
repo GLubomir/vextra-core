@@ -363,6 +363,12 @@ $sales_was  = $p_before->get_total_sales();
 update_option( 'woocommerce_cod_settings', [ 'enabled' => 'yes' ] );
 require_once ABSPATH . 'wp-admin/includes/user.php';
 $exists_mail = 't045a-exists@example.test';
+// A leftover of an aborted run is removed by login + e-mail only (never by a guessed id).
+foreach ( [ get_user_by( 'login', 't045a-exists' ), get_user_by( 'email', $exists_mail ) ] as $left ) {
+	if ( $left instanceof WP_User && $left->ID > 1 && 't045a-exists' === $left->user_login ) {
+		wp_delete_user( $left->ID );
+	}
+}
 $user_id     = wp_insert_user(
 	[
 		'user_login' => 't045a-exists',
@@ -371,8 +377,10 @@ $user_id     = wp_insert_user(
 		'role'       => 'customer',
 	]
 );
+$ok( is_int( $user_id ) && $user_id > 1, 'fixture: test customer created' );
 $users_before = count_users()['total_users'];
 foreach ( [ $exists_mail, 't045a-new@example.test' ] as $buyer_mail ) {
+	RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $buyer_mail, wp_salt( 'auth' ) ) );
 	RateLimiter::reset( 'checkout', '127.0.0.1' );
 	RateLimiter::reset( 'checkout', '::1' );
 	$c   = [];
@@ -445,7 +453,198 @@ foreach ( [ $exists_mail, 't045a-new@example.test' ] as $buyer_mail ) {
 		$ok( '' === (string) wp_remote_retrieve_header( [ 'headers' => $res['headers'] ], 'referrer-policy' ), 'SEC-077: only the order pages carry it' );
 	}
 }
+RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $exists_mail, wp_salt( 'auth' ) ) );
+RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', 't045a-new@example.test', wp_salt( 'auth' ) ) );
 $ok( count_users()['total_users'] === $users_before, 'SEC-071: no account was created by the two checkouts' );
+
+// --- Fix round 6 over HTTP ----------------------------------------------------------------------------------------------------------------
+$vx_cart = static function () use ( $http, $jar, $product ): array {
+	$c = [];
+	$r = $http( 'GET', '/wp-json/wc/store/v1/cart' );
+	$n = (string) wp_remote_retrieve_header( [ 'headers' => $r['headers'] ], 'nonce' );
+	$c = $jar( $r, $c );
+	$r = $http(
+		'POST',
+		'/wp-json/wc/store/v1/cart/add-item',
+		[
+			'headers' => [
+				'Nonce'        => $n,
+				'Content-Type' => 'application/json',
+			],
+			'body'    => wp_json_encode(
+				[
+					'id'       => $product,
+					'quantity' => 1,
+				]
+			),
+		],
+		$c
+	);
+	return [ $jar( $r, $c ), (string) wp_remote_retrieve_header( [ 'headers' => $r['headers'] ], 'nonce' ) ];
+};
+$vx_body = static fn( string $mail, string $address = 'Testova 1' ): array => [
+	'billing_address'  => [
+		'first_name' => 'Test',
+		'last_name'  => 'T',
+		'address_1'  => $address,
+		'city'       => 'Kyiv',
+		'state'      => 'UA30',
+		'postcode'   => '',
+		'country'    => 'UA',
+		'phone'      => '0501234567',
+		'email'      => $mail,
+	],
+	'shipping_address' => [
+		'first_name' => 'Test',
+		'last_name'  => 'T',
+		'address_1'  => $address,
+		'city'       => 'Kyiv',
+		'state'      => 'UA30',
+		'postcode'   => '',
+		'country'    => 'UA',
+		'phone'      => '0501234567',
+	],
+	'payment_method'   => 'cod',
+];
+$r6_mails = [];
+RateLimiter::reset( 'checkout', '127.0.0.1' );
+RateLimiter::reset( 'checkout', '::1' );
+
+// SEC-078: WP core batch with two checkouts and one cart -> at most one order, the second sub-request is refused.
+[ $c, $n ] = $vx_cart();
+$r6_mails[] = 't045a-core-1@example.test';
+$r6_mails[] = 't045a-core-2@example.test';
+$sub        = static fn( string $mail ): array => [
+	'path'    => '/wc/store/v1/checkout',
+	'method'  => 'POST',
+	'headers' => [ 'Nonce' => $n ],
+	'body'    => $vx_body( $mail ),
+];
+$r          = $http(
+	'POST',
+	'/wp-json/batch/v1',
+	[
+		'headers' => [ 'Content-Type' => 'application/json' ],
+		'body'    => wp_json_encode( [ 'requests' => [ $sub( $r6_mails[0] ), $sub( $r6_mails[1] ) ] ] ),
+	],
+	$c
+);
+$d     = json_decode( $r['body'], true );
+$codes = [];
+foreach ( (array) ( $d['responses'] ?? [] ) as $part ) {
+	$codes[] = (int) ( $part['status'] ?? 0 ) . ':' . (string) ( $part['body']['code'] ?? 'ok' );
+}
+$ok( 2 === count( $codes ) && 'vx_checkout_once' === explode( ':', $codes[1] )[1], 'SEC-078: core /batch/v1 -> the 2nd checkout sub-request is refused', implode( ' | ', $codes ) );
+RateLimiter::reset( 'checkout', '127.0.0.1' );
+RateLimiter::reset( 'checkout', '::1' );
+
+// SEC-074: invalid attempts (Woo validation fails) never count; the valid one after them still goes through.
+[ $c, $n ] = $vx_cart();
+$victim      = 't045a-victim@example.test';
+$r6_mails[]  = $victim;
+$vkey        = hash_hmac( 'sha256', $victim, wp_salt( 'auth' ) );
+RateLimiter::reset( 'checkout_mail', $vkey );
+$bad_codes = [];
+for ( $i = 0; $i < 4; $i++ ) {
+	$r           = $http(
+		'POST',
+		'/wp-json/wc/store/v1/checkout',
+		[
+			'headers' => [
+				'Nonce'        => $n,
+				'Content-Type' => 'application/json',
+			],
+			'body'    => wp_json_encode( $vx_body( $victim, '' ) ),
+		],
+		$c
+	);
+	$bad_codes[] = $r['code'];
+}
+wp_cache_flush();
+$count_bad = (int) RateLimiter::peek( 'checkout_mail', $vkey, 100 )['count'];
+$ok( [ 400, 400, 400, 400 ] === $bad_codes && 0 === $count_bad, 'SEC-074: 4 attempts failing address validation -> 400 each, mailbox count ' . $count_bad, implode( ',', $bad_codes ) );
+$r = $http(
+	'POST',
+	'/wp-json/wc/store/v1/checkout',
+	[
+		'headers' => [
+			'Nonce'        => $n,
+			'Content-Type' => 'application/json',
+		],
+		'body'    => wp_json_encode( $vx_body( $victim ) ),
+	],
+	$c
+);
+wp_cache_flush();
+$ok( 200 === $r['code'] && (int) ( json_decode( $r['body'], true )['order_id'] ?? 0 ) > 0 && 1 === (int) RateLimiter::peek( 'checkout_mail', $vkey, 100 )['count'], 'SEC-074: the victim\'s real order after the invalid attempts is accepted and counted once', $r['code'] . ' count ' . (int) RateLimiter::peek( 'checkout_mail', $vkey, 100 )['count'] );
+RateLimiter::reset( 'checkout_mail', $vkey );
+RateLimiter::reset( 'checkout', '127.0.0.1' );
+RateLimiter::reset( 'checkout', '::1' );
+
+// SEC-079: 4 PARALLEL place-orders of ONE cart (same session cookie, 4 different mailboxes) -> exactly 1 order, the rest refused.
+if ( function_exists( 'curl_multi_init' ) ) {
+	[ $c, $n ] = $vx_cart();
+	$cookie    = [];
+	foreach ( $c as $k => $v ) {
+		$cookie[] = $k . '=' . $v;
+	}
+	$mh      = curl_multi_init();
+	$handles = [];
+	for ( $i = 1; $i <= 4; $i++ ) {
+		$mail        = 't045a-par-' . $i . '@example.test';
+		$r6_mails[]  = $mail;
+		$ch          = curl_init( home_url( '/wp-json/wc/store/v1/checkout' ) );
+		curl_setopt_array(
+			$ch,
+			[
+				CURLOPT_POST           => true,
+				CURLOPT_POSTFIELDS     => wp_json_encode( $vx_body( $mail ) ),
+				CURLOPT_RETURNTRANSFER => true,
+				CURLOPT_TIMEOUT        => 30,
+				CURLOPT_HTTPHEADER     => [ 'Content-Type: application/json', 'Nonce: ' . $n, 'Cookie: ' . implode( '; ', $cookie ) ],
+			]
+		);
+		curl_multi_add_handle( $mh, $ch );
+		$handles[] = $ch;
+	}
+	do {
+		$status = curl_multi_exec( $mh, $running );
+		if ( $running ) {
+			curl_multi_select( $mh, 0.05 );
+		}
+	} while ( $running && CURLM_OK === $status );
+	$summary = [];
+	$orders  = 0;
+	foreach ( $handles as $ch ) {
+		$code = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+		$data = json_decode( (string) curl_multi_getcontent( $ch ), true );
+		if ( 200 === $code && (int) ( $data['order_id'] ?? 0 ) > 0 ) {
+			++$orders;
+		}
+		$summary[] = $code . ':' . ( 200 === $code ? 'order' : (string) ( $data['code'] ?? '?' ) );
+		curl_multi_remove_handle( $mh, $ch );
+	}
+	curl_multi_close( $mh );
+	$busy = count( array_filter( $summary, static fn( $x ) => str_ends_with( $x, 'vx_checkout_busy' ) ) );
+	$ok( 1 === $orders && $busy >= 1, 'SEC-079: 4 parallel place-orders of one cart, 4 mailboxes -> 1 order, ' . $busy . ' x 409 vx_checkout_busy', implode( ' | ', $summary ) );
+	WP_CLI::log( 'SEC-079 parallel result: ' . implode( ' | ', $summary ) );
+}
+foreach ( $r6_mails as $mail ) {
+	RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $mail, wp_salt( 'auth' ) ) );
+	foreach ( wc_get_orders(
+		[
+			'limit'         => -1,
+			'billing_email' => $mail,
+			'status'        => array_merge( array_keys( wc_get_order_statuses() ), [ 'checkout-draft' ] ),
+		]
+	) as $o ) {
+		$o->delete( true );
+	}
+}
+RateLimiter::reset( 'checkout', '127.0.0.1' );
+RateLimiter::reset( 'checkout', '::1' );
+
+
 foreach ( $temp_orders as $oid ) {
 	$order = wc_get_order( $oid );
 	if ( $order instanceof WC_Order && str_ends_with( (string) $order->get_billing_email(), '@example.test' ) ) {
@@ -453,7 +652,9 @@ foreach ( $temp_orders as $oid ) {
 	}
 }
 $temp_orders = [];
-wp_delete_user( (int) $user_id );
+if ( is_int( $user_id ) && $user_id > 1 ) {
+	wp_delete_user( $user_id );
+}
 $p_restore = wc_get_product( $product );
 if ( null !== $stock_was ) {
 	wc_update_product_stock( $p_restore, (int) $stock_was, 'set' );
@@ -569,6 +770,8 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 
 	// SEC-075: a non-string e-mail / field -> 400 before the token is verified (token not consumed, no Woo call).
 	$calls = 0;
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp  = $gate->pre_dispatch(
 		null,
 		$server,
@@ -580,6 +783,8 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 		)
 	);
 	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 0 === $calls, 'SEC-075: array e-mail -> 400, token not verified', $resp instanceof WP_REST_Response ? (string) $resp->get_status() : 'null' );
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp = $gate->pre_dispatch(
 		null,
 		$server,
@@ -591,10 +796,14 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 		)
 	);
 	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 0 === $calls, 'SEC-075: 300-char field -> 400, token not verified' );
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp = $gate->pre_dispatch( null, $server, $mk_req( [ 'billing_address' => 'x' ] ) );
 	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status(), 'SEC-075: scalar address -> 400' );
 
 	// SEC-073: a batch that carries a checkout is refused; a batch of cart calls is not touched.
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp = $gate->pre_dispatch(
 		null,
 		$server,
@@ -615,6 +824,8 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 		)
 	);
 	$ok( $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 'vx_checkout_not_batchable' === ( $resp->get_data()['code'] ?? '' ), 'SEC-073: checkout inside /batch -> 400' );
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp = $gate->pre_dispatch(
 		null,
 		$server,
@@ -632,35 +843,62 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 	);
 	$ok( null === $resp, 'SEC-073: a batch without checkout passes through' );
 
-	// SEC-074: no e-mail bucket for an empty cart; with a cart the NORMALISED mailbox is counted once.
+	// SEC-074 (round 6): pre_dispatch never counts the mailbox; the count happens after Woo's validation (`store_api_email_bucket`), per NORMALISED mailbox.
 	$mailbox = 'ab@gmail.com';
-	$peek    = static fn(): int => (int) RateLimiter::peek( 'checkout_mail', hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) ), 100 )['count'];
-	RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) ) );
-	WC()->cart->empty_cart();
-	$body  = static fn( string $mail ): array => [
+	$mkey    = hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) );
+	$peek    = static fn(): int => (int) RateLimiter::peek( 'checkout_mail', $mkey, 100 )['count'];
+	RateLimiter::reset( 'checkout_mail', $mkey );
+	$body = static fn( string $mail ): array => [
 		'billing_address' => [
 			'email'      => $mail,
 			'first_name' => 'T',
 		],
 		'extensions'      => $fresh(),
 	];
-	$resp  = $gate->pre_dispatch( null, $server, $mk_req( $body( 'A.B+one@gmail.com' ) ) );
+	$order_of = static function ( string $mail ): WC_Order {
+		$o = new WC_Order();
+		$o->set_billing_email( $mail );
+		return $o;
+	};
+	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'A.B+one@gmail.com' ) ) );
+	$ok( null === $resp && 0 === $peek(), 'SEC-074: a checkout POST that has not passed Woo validation counts nothing', 'count ' . $peek() );
+	$errors = new WP_Error();
+	$gate->store_api_email_bucket( $order_of( 'a.b+one@gmail.com' ), $errors );
+	$ok( 1 === $peek() && ! $errors->has_errors(), 'SEC-074: counted after validation (1st)', 'count ' . $peek() );
+	$gate->store_api_email_bucket( $order_of( 'a.b+two@googlemail.com' ), $errors );
+	$gate->store_api_email_bucket( $order_of( 'AB@gmail.com' ), $errors );
+	$ok( 3 === $peek() && ! $errors->has_errors(), 'SEC-074: +tag / dots / googlemail share ONE mailbox bucket', 'count ' . $peek() );
+	$gate->store_api_email_bucket( $order_of( 'ab+3@gmail.com' ), $errors );
+	$ok( $errors->has_errors() && 'vx_rate_limited' === $errors->get_error_code(), 'SEC-074: the 4th validated attempt of one mailbox in the hour is refused', implode( ',', $errors->get_error_codes() ) );
+	$busy_errors = new WP_Error( 'x', 'prior validation error' );
+	$before      = $peek();
+	$gate->store_api_email_bucket( $order_of( 'ab@gmail.com' ), $busy_errors );
+	$ok( $before === $peek(), 'SEC-074: an order that already failed Woo validation is not counted' );
 	$gate->restore_locale( null );
-	$ok( null === $resp && 0 === $peek(), 'SEC-074: empty cart -> e-mail bucket not counted', 'count ' . $peek() );
-	WC()->cart->add_to_cart( $product );
-	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'a.b+two@googlemail.com' ) ) );
-	$gate->restore_locale( null );
-	$resp2 = $gate->pre_dispatch( null, $server, $mk_req( $body( 'AB@gmail.com' ) ) );
-	$gate->restore_locale( null );
-	$ok( null === $resp && null === $resp2 && 2 === $peek(), 'SEC-074: +tag / dots / googlemail share ONE mailbox bucket', 'count ' . $peek() );
-	$ok( 'ab@gmail.com' === CheckoutThrottle::normalise_email( 'A.B+x@Gmail.com' ) && 'a.b@example.test' === CheckoutThrottle::normalise_email( 'a.b+x@example.test' ) && '' === CheckoutThrottle::normalise_email( 'nope' ), 'SEC-074: mailbox normalisation cases' );
+	$other = new Gate( new TurnstileCheckout() );
+	$before = $peek();
+	$other->store_api_email_bucket( $order_of( 'ab@gmail.com' ), new WP_Error() );
+	$ok( $before === $peek(), 'SEC-074: a request that never passed the gate (order-pay, other routes) is not counted' );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'ab@gmail.com' ) ) );
+	$ok( $resp instanceof WP_REST_Response && 429 === $resp->get_status(), 'SEC-074: an exhausted mailbox is refused 429 up front, without counting', $resp instanceof WP_REST_Response ? (string) $resp->get_status() : 'null' );
+	$ok( 'ab@gmail.com' === CheckoutThrottle::normalise_email( 'A.B+x@Gmail.com' ) && 'a.b@example.test' === CheckoutThrottle::normalise_email( 'a.b+x@example.test' ) && '' === CheckoutThrottle::normalise_email( 'nope' ), 'SEC-074: mailbox normalisation cases' );
+	RateLimiter::reset( 'checkout_mail', $mkey );
 	$gate->restore_locale( null );
-	$resp = $gate->pre_dispatch( null, $server, $mk_req( $body( 'ab+3@gmail.com' ) ) );
+
+	// SEC-078: ONE checkout POST per PHP request, whatever dispatches it (the second is refused before Turnstile is asked).
+	$gate  = new Gate( new TurnstileCheckout() );
+	$calls = 0;
+	$gate->pre_dispatch( null, $server, $mk_req( $body( 'once-1@example.test' ) ) );
+	$first_calls = $calls;
+	$resp        = $gate->pre_dispatch( null, $server, $mk_req( $body( 'once-2@example.test' ) ) );
+	$ok( 1 === $first_calls && $calls === $first_calls && $resp instanceof WP_REST_Response && 400 === $resp->get_status() && 'vx_checkout_once' === ( $resp->get_data()['code'] ?? '' ), 'SEC-078: the 2nd checkout of one PHP request -> 400 before Turnstile (siteverify calls ' . $calls . ')' );
+	$resp = $gate->pre_dispatch( null, $server, $mk_req( [ 'extensions' => $fresh() ], '/wc/store/v1/cart' ) );
+	$ok( null === $resp, 'SEC-078: other routes are not counted' );
 	$gate->restore_locale( null );
-	$ok( $resp instanceof WP_REST_Response && 429 === $resp->get_status(), 'SEC-074: the 4th attempt of one mailbox in the hour is 429', $resp instanceof WP_REST_Response ? (string) $resp->get_status() : 'null' );
-	RateLimiter::reset( 'checkout_mail', hash_hmac( 'sha256', $mailbox, wp_salt( 'auth' ) ) );
-	WC()->cart->empty_cart();
+
+	// SEC-079: the session lock name is derived from the Woo session id only.
+	$ok( Gate::session_lock_name( 't_abc' ) === Gate::session_lock_name( 't_abc' ) && Gate::session_lock_name( 't_abc' ) !== Gate::session_lock_name( 't_abd' ) && Gate::session_lock_name( '1' ) !== Gate::lock_name( 'a@example.test' ), 'SEC-079: session lock name = Woo customer id' );
 
 	// SEC-072: the lock name comes from the Guard client key + mailbox, never from a cookie; the lock is taken after the token passed.
 	$name_a = Gate::lock_name( 'a@example.test' );
@@ -670,6 +908,8 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 	global $wpdb;
 	$wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, 0 )', Gate::lock_name( 'held@example.test' ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	$calls = 0;
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$resp  = $gate->pre_dispatch( null, $server, $mk_req( $body( 'held@example.test' ) ) );
 	$gate->restore_locale( null );
 	// The same connection already holds the named lock (MySQL lets it re-enter), so the busy path is proven by the order of work: the token WAS verified first.
@@ -684,6 +924,8 @@ if ( defined( 'VX_TURNSTILE_SITE_KEY' ) || defined( 'VX_TURNSTILE_SECRET_KEY' ) 
 			'extensions'      => $fresh(),
 		]
 	);
+	$gate->restore_locale( null );
+	$gate = new Gate( new TurnstileCheckout() );
 	$gate->pre_dispatch( null, $server, $req );
 	$gate->restore_locale( null );
 	$ok( false === $req->get_param( 'create_account' ) && 'no' === (string) get_option( 'woocommerce_enable_signup_and_login_from_checkout', 'no' ), 'SEC-071: create_account forced off; option is no' );
