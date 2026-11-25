@@ -2,6 +2,7 @@
 /**
  * Read-only REST route of the Recommend module (TASK-038): `GET /wp-json/vextra/v1/recommend?context=post_add|cart&product_id=<int>`.
  *
+ * Optional `variant=compact` (TASK-045a): the compact card with `rec_src=drawer` in its add-to-cart form; `cart` on an empty cart answers `items: []` without calling the engine.
  * Response `{ items: [ { id, src, html } ], lang }`: product ids, whitelisted source names and the server-rendered `product-card`
  * markup of the theme (same component as the catalog, escaped there, no per-user data). No personal data, no cookies, no session for
  * `post_add`.
@@ -24,6 +25,7 @@ namespace Vextra\Core\Recommend;
 use Vextra\Core\Integrations\Polylang\Polylang;
 use Vextra\Core\Integrations\WooCommerce\WooCommerce;
 use Vextra\Core\Plugin;
+use Vextra\Core\Support\CardMarkup;
 
 final class Rest {
 
@@ -57,6 +59,10 @@ final class Rest {
 					'lang'       => [
 						'type'              => 'string',
 						'validate_callback' => static fn( $value ): bool => is_string( $value ) && 1 === preg_match( '/^[a-z]{2,3}(-[a-z]{2,4})?$/', $value ),
+					],
+					'variant'    => [
+						'type'              => 'string',
+						'validate_callback' => static fn( $value ): bool => is_string( $value ) && in_array( $value, [ 'grid', 'compact' ], true ),
 					],
 				],
 			]
@@ -124,12 +130,24 @@ final class Rest {
 			}
 			$lang = '' !== $lang ? $lang : Pool::current_language();
 			$args = [ 'lang' => $lang ];
+			if ( $woo instanceof WooCommerce && array() === $woo->cart_product_ids() ) {
+				// TASK-045a: an empty cart has nothing to complement (no engine call, no markup).
+				$empty = new \WP_REST_Response(
+					[
+						'items' => [],
+						'lang'  => $lang,
+					]
+				);
+				$empty->header( 'Cache-Control', 'no-store' );
+				return $empty;
+			}
 		}
 
+		$compact  = 'compact' === (string) $request->get_param( 'variant' );
 		$items    = Engine::recommend( $context, $args );
 		$response = new \WP_REST_Response(
 			[
-				'items' => $this->with_markup( $items, $lang ),
+				'items' => $this->with_markup( $items, $lang, $compact, $context ),
 				'lang'  => $lang,
 			]
 		);
@@ -140,11 +158,24 @@ final class Rest {
 	/**
 	 * Add the card markup of the theme to every item (empty string when the theme has no `vx_component()`).
 	 *
-	 * @param array<int,array{id:int,src:string}> $items Items.
-	 * @param string                              $lang  Language slug (the markup is rendered in it).
+	 * @param array<int,array{id:int,src:string}> $items   Items.
+	 * @param string                              $lang    Language slug (the markup is rendered in it).
+	 * @param bool                                $compact `variant=compact`: the compact card, attributed to the drawer (`rec_src=drawer`).
+	 * @param string                              $context `post_add` or `cart`.
 	 * @return array<int,array{id:int,src:string,html:string}>
 	 */
-	private function with_markup( array $items, string $lang ): array {
-		return CardMarkup::attach( $items, $lang );
+	private function with_markup( array $items, string $lang, bool $compact = false, string $context = '' ): array {
+		if ( $compact ) {
+			$card = [
+				'variant' => 'compact',
+				'rec_src' => 'drawer',
+			];
+		} else {
+			$card = [
+				'variant' => 'grid',
+				'rec_src' => 'cart' === $context ? 'cart_crosssell' : '',
+			];
+		}
+		return CardMarkup::attach( $items, $lang, $card );
 	}
 }

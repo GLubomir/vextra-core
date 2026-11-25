@@ -86,23 +86,48 @@ final class Turnstile extends AbstractIntegration {
 	/**
 	 * Output the widget container for a form (nothing when unavailable).
 	 *
-	 * @param string $action One of self::ACTIONS.
+	 * @param string              $action  One of self::ACTIONS.
+	 * @param array<string,mixed> $options Optional: `appearance` (`always`|`execute`|`interaction-only`, default Cloudflare's `always`),
+	 *                                     `reserve` (bool, default true: keep 65 px so the form does not jump; false = zero height until
+	 *                                     Cloudflare needs interaction, used by the checkout slot), `class` (extra CSS class).
 	 */
-	public function render_widget( string $action ): void {
+	public function render_widget( string $action, array $options = [] ): void {
 		$keys = $this->keys();
 		if ( ! $this->is_available() || null === $keys || ! in_array( $action, self::ACTIONS, true ) ) {
 			return;
 		}
 		$this->enqueue();
 
-		// Fixed height of the widget (65 px) so the form does not jump when Cloudflare injects the iframe.
+		$appearance = isset( $options['appearance'] ) && in_array( $options['appearance'], [ 'always', 'execute', 'interaction-only' ], true ) ? (string) $options['appearance'] : '';
+		$reserve    = ! array_key_exists( 'reserve', $options ) || (bool) $options['reserve'];
+		$class      = isset( $options['class'] ) && is_string( $options['class'] ) ? trim( preg_replace( '/[^A-Za-z0-9_\- ]/', '', $options['class'] ) ?? '' ) : '';
+
+		// Default: fixed height of the widget (65 px) so the form does not jump when Cloudflare injects the iframe.
 		printf(
-			'<div class="cf-turnstile" data-sitekey="%1$s" data-action="%2$s" data-theme="light" data-language="%3$s" style="min-height:65px;margin:0 0 16px"></div>',
+			'<div class="cf-turnstile%1$s" data-sitekey="%2$s" data-action="%3$s" data-theme="light" data-language="%4$s"%5$s style="%6$s"></div>',
+			'' !== $class ? ' ' . esc_attr( $class ) : '',
 			esc_attr( $keys['site'] ),
 			esc_attr( $action ),
-			esc_attr( $this->language() )
+			esc_attr( $this->language() ),
+			'' !== $appearance ? ' data-appearance="' . esc_attr( $appearance ) . '" data-refresh-expired="auto"' : '',
+			$reserve ? 'min-height:65px;margin:0 0 16px' : 'min-height:0;margin:0'
 		);
 		echo '<noscript>' . esc_html__( 'Увімкніть JavaScript, щоб пройти перевірку «я не робот».', 'vextra-core' ) . '</noscript>';
+	}
+
+	/**
+	 * Public site key (empty when the adapter is unavailable). Safe to print: it is public by design.
+	 */
+	public function site_key(): string {
+		$keys = $this->keys();
+		return $this->is_available() && null !== $keys ? $keys['site'] : '';
+	}
+
+	/**
+	 * Widget language code for the current request (`uk`, `ru` or `auto`).
+	 */
+	public function widget_language(): string {
+		return $this->language();
 	}
 
 	/**

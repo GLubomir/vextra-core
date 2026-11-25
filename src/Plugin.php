@@ -14,7 +14,9 @@ namespace Vextra\Core;
 
 use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Vextra\Core\Admin\Notices;
+use Vextra\Core\Cart\Module as Cart;
 use Vextra\Core\Catalog\Catalog;
+use Vextra\Core\Checkout\Module as Checkout;
 use Vextra\Core\Compat\Compat;
 use Vextra\Core\Compat\Conflicts;
 use Vextra\Core\Contracts\ModuleInterface;
@@ -59,6 +61,8 @@ final class Plugin {
 		Recommend::class,
 		Product::class,
 		Media::class,
+		Cart::class,
+		Checkout::class,
 	];
 
 	/**

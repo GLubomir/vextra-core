@@ -3,7 +3,7 @@
  * Thin logger over wc_get_logger(). Source = `vextra-<channel>` (default channel `core`).
  *
  * SECURITY: never pass secrets as messages. Context entries whose key contains
- * password|secret|token|api_key|private_key|auth(orization)|cookie|nonce (case-insensitive regex, recursive) are removed before writing.
+ * password|secret|token|api_key|private_key|auth(orization)|cookie|nonce|e-mail|phone|first / last name (no PII in logs, TASK-045a) (case-insensitive regex, recursive) are removed before writing.
  * Falls back to error_log() only when WP_DEBUG_LOG is on and WooCommerce's logger is unavailable.
  *
  * @package Vextra\Core
@@ -15,7 +15,7 @@ namespace Vextra\Core\Support;
 
 final class Log {
 
-	private const SENSITIVE = '/(pass(word|wd)?|secret|token|api[_-]?key|private[_-]?key|auth(orization)?|cookie|nonce)/i';
+	private const SENSITIVE = '/(pass(word|wd)?|secret|token|api[_-]?key|private[_-]?key|auth(orization)?|cookie|nonce|e-?mail|phone|first_?name|last_?name)/i';
 
 	/**
 	 * Log at debug level.

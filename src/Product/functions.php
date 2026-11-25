@@ -63,6 +63,19 @@ if ( ! function_exists( 'vx_pdp_info' ) ) {
 	}
 }
 
+if ( ! function_exists( 'vx_free_shipping' ) ) {
+	/**
+	 * Free-shipping threshold of a language: the ONE source (option `vx_pdp_info[lang].free_shipping_threshold`) of the cart bar, the topbar text and the
+	 * info row. `enabled` false = no threshold set (0 is the owner decision pending, BOARD M6): the bar stays hidden. `text` is the ready sentence.
+	 *
+	 * @param string $lang Language slug ('' = the current one).
+	 * @return array{enabled:bool,threshold:int,threshold_minor:int,text:string}
+	 */
+	function vx_free_shipping( string $lang = '' ): array {
+		return InfoRows::free_shipping( $lang );
+	}
+}
+
 if ( ! function_exists( 'vx_pdp_reviews' ) ) {
 	/**
 	 * Reviews view-model of a product (see `Product\ReviewsData`).

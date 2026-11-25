@@ -58,6 +58,8 @@ final class Conflicts {
 		'pdp'       => [ 'woo-variation-swatches', 'variation-swatches-for-woocommerce', 'woo-variation-gallery', 'yith-woocommerce-color-label-variations', 'yith-woocommerce-color-and-label-variations', 'woo-product-gallery-slider', 'sticky-add-to-cart-for-woocommerce', 'wpc-variations-radio-buttons', 'wpc-variation-swatches', 'wpc-product-gallery', 'woo-variation-swatches-pro' ],
 		// Image format converters / optimisers that write or serve WebP / AVIF themselves (they own the formats; the media module yields). `duplicate-image-optimizer-plugin` is NOT here: a duplicate finder, no format conversion known (no wordpress.org listing, behaviour unverified) -> own warn rule. Slugs from wordpress.org.
 		'imgformat' => [ 'webp-express', 'webp-converter-for-media', 'imagify', 'shortpixel-image-optimiser', 'ewww-image-optimizer', 'ewww-image-optimizer-cloud', 'optimole-wp', 'wp-smushit', 'wp-smush-pro', 'smush-pro', 'tiny-compress-images', 'robin-image-optimizer', 'sirv' ],
+		// Side-cart / checkout-replacement / one-page-checkout plugins: the cart and checkout are WooCommerce blocks restyled by the theme + vextra-core (TASK-045a). Folder names from wordpress.org / the vendors (best effort, 2026-11; extend through the rules filter).
+		'cart'      => [ 'fluid-checkout', 'fluid-checkout-pro', 'cartflows', 'cartflows-pro', 'funnel-builder', 'funnel-builder-pro', 'woofunnels-aero-checkout', 'cart-for-woocommerce', 'side-cart-woocommerce', 'woo-side-cart', 'woo-side-cart-premium', 'woocommerce-direct-checkout', 'flux-checkout', 'iconic-woo-flux-checkout', 'woocommerce-one-page-checkout', 'woo-one-page-checkout', 'wc-one-page-checkout', 'checkout-for-woocommerce' ],
 		'turnstile' => [ 'simple-cloudflare-turnstile', 'kitgenix-captcha-for-cloudflare-turnstile', 'wppool-turnstile-captcha-spam-filter', 'hcaptcha-for-forms-and-more' ],
 	];
 
@@ -303,6 +305,16 @@ final class Conflicts {
 				'action'   => self::ACTION_YIELD,
 				'blocking' => false,
 				'fix_hint' => static fn(): string => __( 'Схожі товари, апсейли та крос-сейли веде vextra-core (один рушій рекомендацій). Деактивуйте плагін, модуль увімкнеться сам; до того працюють рідні схожі товари WooCommerce.', 'vextra-core' ),
+				'scope'    => self::SCOPE_PLUGINS,
+			],
+			[
+				'id'       => 'duplicate-cart-plugin',
+				'title'    => static fn(): string => __( 'Активний плагін бічного кошика / заміни оформлення замовлення поряд із кошиком і оформленням vextra', 'vextra-core' ),
+				'module'   => 'cart',
+				'detector' => fn() => $this->detect_plugins( self::PLUGINS['cart'] ),
+				'action'   => self::ACTION_WARN,
+				'blocking' => true,
+				'fix_hint' => static fn(): string => __( 'Кошик і оформлення — блоки WooCommerce, які стилізує тема, а vextra-core веде лічильник кошика, Turnstile, ліміти спроб і правила полів. Бічний кошик / Fluid Checkout / CartFlows / FunnelKit / «Direct Checkout» / Flux Checkout / one-page checkout підміняють ці сторінки й ламають ці правила: деактивуйте плагін.', 'vextra-core' ),
 				'scope'    => self::SCOPE_PLUGINS,
 			],
 			[
