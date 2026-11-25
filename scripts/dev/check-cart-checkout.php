@@ -257,6 +257,44 @@ $res     = $http(
 );
 $ok( 200 === $res['code'] && 0 === strpos( $vx_line( $res ), 'vx_cart=deleted' ), 'empty cart: vx_cart expired', $vx_line( $res ) );
 
+// Stock clamp: Woo lowers a quantity on a Store API GET after the stock dropped; the cookie follows the returned cart. The stock is restored exactly.
+$stock_before = wc_get_product( $product )->get_stock_quantity();
+if ( null !== $stock_before && $stock_before >= 3 ) {
+	$res     = $post(
+		'cart/add-item',
+		[
+			'id'       => $product,
+			'quantity' => 3,
+		]
+	);
+	$cookies = $jar( $res, $cookies );
+	$ok( 0 === strpos( $vx_line( $res ), 'vx_cart=3;' ), 'clamp setup: vx_cart=3' );
+	$res = $post(
+		'cart/add-item',
+		[
+			'id'       => $product,
+			'quantity' => $stock_before + 50,
+		]
+	);
+	$ok( 400 === $res['code'] && '' === $vx_line( $res ), 'add over stock: refused, cookie untouched (still 3)' );
+	wc_update_product_stock( wc_get_product( $product ), 1, 'set' );
+	$res     = $http( 'GET', '/wp-json/wc/store/v1/cart', [], $cookies );
+	$cookies = $jar( $res, $cookies );
+	$ok( 200 === $res['code'] && 0 === strpos( $vx_line( $res ), 'vx_cart=1;' ), 'stock clamp on GET cart: vx_cart refreshed 3 -> 1', $vx_line( $res ) );
+	wc_update_product_stock( wc_get_product( $product ), $stock_before, 'set' );
+	$http(
+		'DELETE',
+		'/wp-json/wc/store/v1/cart/items',
+		[
+			'headers' => [
+				'Nonce'        => $nonce,
+				'Content-Type' => 'application/json',
+			],
+		],
+		$cookies
+	);
+}
+
 // The page does not depend on the cookie (cache safety).
 $norm  = static fn( string $html ): string => (string) preg_replace( '#<a href="mailto:[^"]*">[^<]*</a>#', '<MAIL>', $html );
 $plain = $norm( $http( 'GET', '/catalog/' )['body'] );

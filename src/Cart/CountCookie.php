@@ -12,7 +12,8 @@
  *   `woocommerce_cart_emptied`, `woocommerce_cart_item_restored` (these also fire inside Store API requests, so the response carries
  *   the header), `wp_login` (cart merge). Plus a self-heal for a SIGNED-IN visitor: when Woo has loaded the cart from the session and the cookie
  *   differs (a merge, another device), the cookie is corrected.
- * - NEVER on an anonymous GET / HEAD, never under WP-CLI, cron, admin screens or once headers are sent; never creates a Woo session
+ * - Every Store API answer also aligns the cookie with the returned cart (quantity clamped by stock on a GET, add over stock refused, merge).
+ * - NEVER on an anonymous page GET / HEAD, never under WP-CLI, cron, admin screens or once headers are sent; never creates a Woo session
  *   (it only reads the cart object that already exists).
  *
  * @package Vextra\Core
@@ -40,6 +41,33 @@ final class CountCookie {
 			add_action( $hook, [ $this, 'sync' ], 20 );
 		}
 		add_action( 'woocommerce_cart_loaded_from_session', [ $this, 'heal' ], 20 );
+		// Every Store API answer (incl. a GET that makes Woo clamp a quantity to the stock, or a failed add over stock): the cookie follows the cart that was just returned.
+		add_filter( 'rest_post_dispatch', [ $this, 'after_store_api' ], 20, 3 );
+	}
+
+	/**
+	 * Store API request finished: align the cookie with the cart of the answer (never creates a session: the cart object must already hold items or the cookie must exist).
+	 *
+	 * @param mixed $response REST response (returned unchanged).
+	 * @param mixed $server   Server (unused).
+	 * @param mixed $request  Request.
+	 * @return mixed
+	 */
+	public function after_store_api( $response, $server = null, $request = null ) {
+		unset( $server );
+		if ( ! $request instanceof \WP_REST_Request || 0 !== strpos( strtolower( (string) $request->get_route() ), '/wc/store/' ) || ! $this->may_write( true ) ) {
+			return $response;
+		}
+		$count = $this->count();
+		if ( null === $count ) {
+			return $response;
+		}
+		$have = isset( $_COOKIE[ self::NAME ] ) && is_string( $_COOKIE[ self::NAME ] ) ? sanitize_text_field( wp_unslash( $_COOKIE[ self::NAME ] ) ) : '';
+		if ( ( 0 === $count && '' === $have ) || (string) $count === $have ) {
+			return $response;
+		}
+		$this->write( $count );
+		return $response;
 	}
 
 	/**

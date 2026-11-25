@@ -31,6 +31,8 @@ final class Strings {
 			return;
 		}
 		add_filter( 'gettext', [ $this, 'gettext' ], 20, 3 );
+		add_filter( 'woocommerce_get_privacy_policy_text', [ $this, 'privacy_text' ], 20, 2 );
+		add_filter( 'woocommerce_get_terms_and_conditions_checkbox_text', [ $this, 'terms_checkbox_text' ], 20 );
 		// Woo registers + enqueues the block frontend scripts while the block renders (after wp_enqueue_scripts): attach the override right after.
 		add_filter( 'render_block_woocommerce/cart', [ $this, 'after_cart_block' ], 20 );
 		add_filter( 'render_block_woocommerce/checkout', [ $this, 'after_checkout_block' ], 20 );
@@ -61,6 +63,45 @@ final class Strings {
 				return __( 'Підтвердити замовлення', 'vextra-core' );
 		}
 		return $translation;
+	}
+
+	/**
+	 * Privacy sentence of the checkout / order-pay / registration forms: the stored option holds Woo's English default, so it is swapped for the
+	 * translated sentence as long as nobody edited it (an owner-written text is never touched).
+	 *
+	 * @param mixed $text Text from the option.
+	 * @param mixed $type `checkout` or `registration`.
+	 * @return mixed
+	 */
+	public function privacy_text( $text, $type = '' ) {
+		if ( ! is_string( $text ) ) {
+			return $text;
+		}
+		$english = [
+			'checkout'     => 'Your personal data will be used to process your order, support your experience throughout this website, and for other purposes described in our [privacy_policy].',
+			'registration' => 'Your personal data will be used to support your experience throughout this website, to manage access to your account, and for other purposes described in our [privacy_policy].',
+		];
+		if ( ! is_string( $type ) || ! isset( $english[ $type ] ) || trim( $text ) !== $english[ $type ] ) {
+			return $text;
+		}
+		if ( 'checkout' === $type ) {
+			return __( 'Ваші персональні дані використовуватимуться для обробки замовлення та роботи сайту. Ознайомтеся з [privacy_policy].', 'vextra-core' );
+		}
+		return __( 'Ваші персональні дані використовуватимуться для роботи сайту та керування доступом до облікового запису. Ознайомтеся з [privacy_policy].', 'vextra-core' );
+	}
+
+	/**
+	 * Terms checkbox label of the classic checkout / order-pay form: "I have read and agree to the website [terms]" -> "Я прочитав(ла) і погоджуюся з [terms]"
+	 * (the link label is the instrumental "публічною офертою"), only while the owner has not saved a text of their own.
+	 *
+	 * @param mixed $text Text (option or Woo default).
+	 * @return mixed
+	 */
+	public function terms_checkbox_text( $text ) {
+		if ( ! is_string( $text ) || false !== get_option( 'woocommerce_checkout_terms_and_conditions_checkbox_text', false ) ) {
+			return $text;
+		}
+		return __( 'Я прочитав(ла) і погоджуюся з [terms]', 'vextra-core' );
 	}
 
 	/**
