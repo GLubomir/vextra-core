@@ -77,7 +77,7 @@ if ( ! function_exists( 'vx_catalog_accessories' ) ) {
 
 if ( ! function_exists( 'vx_catalog_shop_cards' ) ) {
 	/**
-	 * Top-level non-empty categories of the current language for the shop root (image id, count, up to 4 sub links).
+	 * Top-level non-empty categories of the current language for the shop root (image id, count, up to 6 sub links biggest-first + `subs_total` = all non-empty children).
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */

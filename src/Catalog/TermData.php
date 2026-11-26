@@ -6,7 +6,8 @@
  * cached under WP-CLI), flushed by `Catalog` on product / term / stock changes. Every link is a clean `get_term_link()` URL; only
  * non-empty categories (hierarchical `Seo\TermCounts`) are ever listed (empty ones are noindex and never linked). Counts are returned
  * as data, never put into anchor text (SEO MINOR-6).
- * Row shape: `[ id, name, url, count, thumb_id ]`.
+ * Row shape: `[ id, name, url, count, thumb_id ]`; shop-root cards add `subs` (up to 6 `[ id, name, url ]`, biggest count first) and
+ * `subs_total` (all non-empty children, int).
  *
  * @package Vextra\Core
  */
@@ -26,6 +27,11 @@ final class TermData {
 	public const GROUP = 'catalog-terms';
 
 	private const TTL = HOUR_IN_SECONDS;
+
+	/**
+	 * Sub links per shop-root card (TASK-050); the rest is reachable through the "+N" link to the parent.
+	 */
+	private const SUBS_CAP = 6;
 
 	/**
 	 * Hierarchical counts (memoised across calls).
@@ -71,9 +77,9 @@ final class TermData {
 	}
 
 	/**
-	 * Top-level categories of the current language for the shop root: non-empty, with image id, count and up to 4 sub links.
+	 * Top-level categories of the current language for the shop root: non-empty, with image id, count, up to 6 sub links (biggest first) and `subs_total`.
 	 *
-	 * @return array<int,array<string,mixed>>
+	 * @return array<int,array{id:int,name:string,url:string,count:int,thumb_id:int,subs:array<int,array{id:int,name:string,url:string}>,subs_total:int}>
 	 */
 	public static function shop_cards(): array {
 		$data = Cache::remember( self::GROUP, 'shop:' . self::lang(), self::TTL, static fn(): array => self::build_shop() );
@@ -197,8 +203,12 @@ final class TermData {
 	public static function build_shop( string $lang = '' ): array {
 		$out = [];
 		foreach ( self::children( 0, $lang ) as $row ) {
-			$subs        = array_slice( self::children( (int) $row['id'] ), 0, 4 );
-			$row['subs'] = array_map(
+			$all = self::children( (int) $row['id'], $lang );
+			// Biggest first (the user-visible reason of the cap); `children()` is name-ordered and usort is stable, so ties stay alphabetical.
+			usort( $all, static fn( array $a, array $b ): int => $b['count'] <=> $a['count'] );
+			$subs              = array_slice( $all, 0, self::SUBS_CAP );
+			$row['subs_total'] = count( $all );
+			$row['subs']       = array_map(
 				static fn( array $sub ): array => [
 					'id'   => $sub['id'],
 					'name' => $sub['name'],
@@ -206,7 +216,7 @@ final class TermData {
 				],
 				$subs
 			);
-			$out[]       = $row;
+			$out[]             = $row;
 		}
 		return $out;
 	}
