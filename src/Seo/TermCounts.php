@@ -5,9 +5,12 @@
  * WordPress' `term_taxonomy.count` is DIRECT-only (a parent whose products sit in children has count 0) and Rank Math
  * reads it for its empty-taxonomy noindex, so nothing in the Seo module reads `$term->count`. One prepared SQL per cache
  * miss reads every `product_cat` term (all languages: ids are language-specific, so the map needs no language key) with
- * its parent and the number of PUBLISHED products assigned directly; the totals are rolled up through the parent chain in
- * PHP. Out-of-stock products are `publish` and count. The "total" is the sum of direct assignments of the subtree (a product
- * in two categories of the same subtree counts twice); only `> 0` is used for decisions, so this is exact where it matters.
+ * its parent and its listable PUBLISHED products (not password protected, not catalog-hidden); the totals are rolled up through
+ * the parent chain in PHP as the number of DISTINCT products of the subtree (TASK-050: a product in a parent and its child, or in
+ * two sibling children, counts once, so the number equals the category page "Found N"). Out-of-stock products are `publish` and
+ * count. "direct" = distinct products assigned directly. Decisions (`has_products`, noindex, sitemap) use `> 0`, which the union
+ * keeps identical to the old sum; the only change is a category whose products are ALL catalog-hidden: its page lists nothing, so it
+ * is now empty (noindex) like any other empty category.
  *
  * Cache: `Support\Cache` group `seo` (persistent object cache if present, else transients; never under WP-CLI) plus a
  * per-request memo. Flushed on product/term writes; at shutdown the set of indexable categories is hashed and the Rank Math
@@ -20,10 +23,11 @@ declare(strict_types=1);
 
 namespace Vextra\Core\Seo;
 
-use Vextra\Core\Support\Listable;
-
 use Vextra\Core\Integrations\RankMath\RankMath;
+use Vextra\Core\Integrations\WooCommerce\WooCommerce;
+use Vextra\Core\Plugin;
 use Vextra\Core\Support\Cache;
+use Vextra\Core\Support\Listable;
 
 final class TermCounts {
 
@@ -76,7 +80,7 @@ final class TermCounts {
 		}
 		self::$hooked = true;
 
-		add_action( 'set_object_terms', [ $this, 'on_object_terms' ], 10, 4 );
+		add_action( 'set_object_terms', [ $this, 'on_object_terms' ], 10, 6 );
 		add_action( 'transition_post_status', [ $this, 'on_transition' ], 10, 3 );
 		add_action( 'deleted_post', [ $this, 'on_deleted_post' ] );
 		add_action( 'created_' . self::TAXONOMY, [ $this, 'invalidate' ] );
@@ -166,11 +170,22 @@ final class TermCounts {
 	 * @param mixed  $terms     Terms (unused).
 	 * @param mixed  $tt_ids    Term taxonomy ids (unused).
 	 * @param string $taxonomy  Taxonomy.
+	 * @param mixed  $append    Append flag (unused).
+	 * @param mixed  $old_tt_ids Previous term taxonomy ids.
 	 */
-	public function on_object_terms( $object_id, $terms, $tt_ids, $taxonomy ): void {
-		unset( $object_id, $terms, $tt_ids );
+	public function on_object_terms( $object_id, $terms, $tt_ids, $taxonomy, $append = false, $old_tt_ids = [] ): void {
+		unset( $object_id, $terms, $append );
 		if ( self::TAXONOMY === $taxonomy ) {
 			$this->invalidate();
+			return;
+		}
+		// Catalog visibility (hidden products are not counted): flush only when the `exclude-from-catalog` flag itself flipped, not on every stock change.
+		if ( 'product_visibility' === $taxonomy ) {
+			$woo    = Plugin::instance()->integration( 'woocommerce' );
+			$hidden = $woo instanceof WooCommerce ? $woo->hidden_term_tt() : 0;
+			if ( $hidden > 0 && in_array( $hidden, array_map( 'intval', (array) $tt_ids ), true ) !== in_array( $hidden, array_map( 'intval', (array) $old_tt_ids ), true ) ) {
+				$this->invalidate();
+			}
 		}
 	}
 
@@ -229,48 +244,96 @@ final class TermCounts {
 	}
 
 	/**
-	 * One prepared query + PHP roll-up.
+	 * One prepared query + PHP union roll-up.
+	 *
+	 * Rows are `term, parent, product` ordered by product id (terms without a listable product come with a NULL product). For every
+	 * product the set of its terms plus all their ancestors is marked once, so `total` is the number of DISTINCT products of the
+	 * subtree: a product assigned to a parent AND its child (Woo does this) or to two sibling children counts once, exactly like the
+	 * category page (`found_posts` of an `include_children` tax query). Streaming by product keeps memory flat (no per-term id sets).
+	 * Products with catalog visibility "hidden" (`exclude-from-catalog`) are excluded like the category listing excludes them.
 	 *
 	 * @return array{direct:array<int,int>,total:array<int,int>}
 	 */
 	private function build(): array {
 		global $wpdb;
 
+		$hidden = 0;
+		$woo    = Plugin::instance()->integration( 'woocommerce' );
+		if ( $woo instanceof WooCommerce ) {
+			$hidden = $woo->hidden_term_tt();
+		}
+		$not_hidden = $hidden > 0
+			? $wpdb->prepare( " AND NOT EXISTS ( SELECT 1 FROM {$wpdb->term_relationships} hv WHERE hv.object_id = p.ID AND hv.term_taxonomy_id = %d ) ", $hidden ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name only.
+			: '';
+
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table names only.
 		$sql  = $wpdb->prepare(
-			"SELECT tt.term_id, tt.parent, COUNT( DISTINCT p.ID ) AS n
+			"SELECT tt.term_id, tt.parent, p.ID
 			FROM {$wpdb->term_taxonomy} tt
 			LEFT JOIN {$wpdb->term_relationships} tr ON tr.term_taxonomy_id = tt.term_taxonomy_id
-			LEFT JOIN {$wpdb->posts} p ON p.ID = tr.object_id AND p.post_type = %s AND p.post_status = %s /*LISTABLE*/
+			LEFT JOIN {$wpdb->posts} p ON p.ID = tr.object_id AND p.post_type = %s AND p.post_status = %s /*LISTABLE*/ /*HIDDEN*/
 			WHERE tt.taxonomy = %s
-			GROUP BY tt.term_id, tt.parent",
+			ORDER BY p.ID",
 			'product',
 			'publish',
 			self::TAXONOMY
 		);
-		$sql  = str_replace( '/*LISTABLE*/', Listable::sql( 'p' ), $sql ); // SEC-066: protected products are not counted.
-		$rows = $wpdb->get_results( $sql, ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		$sql  = str_replace( [ '/*LISTABLE*/', '/*HIDDEN*/' ], [ Listable::sql( 'p' ), $not_hidden ], $sql ); // SEC-066: protected products are not counted.
+		$rows = $wpdb->get_results( $sql, ARRAY_N ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery,WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->flush(); // Do not keep a second copy of the result set in `$wpdb->last_result`.
 
 		$direct  = [];
 		$parents = [];
 		foreach ( (array) $rows as $row ) {
-			$id             = (int) $row['term_id'];
-			$direct[ $id ]  = (int) $row['n'];
-			$parents[ $id ] = (int) $row['parent'];
+			$id             = (int) $row[0];
+			$parents[ $id ] = (int) $row[1];
+			if ( ! isset( $direct[ $id ] ) ) {
+				$direct[ $id ] = 0;
+			}
+			if ( null !== $row[2] ) {
+				++$direct[ $id ];
+			}
 		}
 
-		$total = $direct;
-		foreach ( $direct as $id => $n ) {
-			if ( $n <= 0 ) {
-				continue;
+		// Term + ancestors, computed once per term (cycle-safe, stops at a parent that is not in the result).
+		$chains = [];
+		$chain  = static function ( int $id ) use ( &$chains, $parents ): array {
+			if ( isset( $chains[ $id ] ) ) {
+				return $chains[ $id ];
 			}
+			$list = [ $id ];
 			$seen = [ $id => true ];
 			$up   = $parents[ $id ] ?? 0;
-			while ( $up > 0 && isset( $total[ $up ] ) && ! isset( $seen[ $up ] ) ) {
-				$total[ $up ] += $n;
-				$seen[ $up ]   = true;
-				$up            = $parents[ $up ] ?? 0;
+			while ( $up > 0 && isset( $parents[ $up ] ) && ! isset( $seen[ $up ] ) ) {
+				$list[]      = $up;
+				$seen[ $up ] = true;
+				$up          = $parents[ $up ];
 			}
+			$chains[ $id ] = $list;
+			return $list;
+		};
+
+		$total   = array_fill_keys( array_keys( $direct ), 0 );
+		$current = null;
+		$marked  = [];
+		foreach ( (array) $rows as $row ) {
+			if ( null === $row[2] ) {
+				continue; // ORDER BY puts the product-less terms first.
+			}
+			$pid = (int) $row[2];
+			if ( $pid !== $current ) {
+				foreach ( $marked as $tid => $_ ) {
+					++$total[ $tid ];
+				}
+				$marked  = [];
+				$current = $pid;
+			}
+			foreach ( $chain( (int) $row[0] ) as $tid ) {
+				$marked[ $tid ] = true;
+			}
+		}
+		foreach ( $marked as $tid => $_ ) {
+			++$total[ $tid ];
 		}
 
 		return [
